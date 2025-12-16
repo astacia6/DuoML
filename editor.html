@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>에디터 - DuoML</title>
+    <link rel="stylesheet" href="/src/style.css">
+  </head>
+  <body>
+    <div id="app">
+      <!-- 로딩 화면 -->
+      <div id="loadingScreen" class="loading-screen">
+        <div class="loading-spinner"></div>
+        <p>프로젝트를 불러오는 중...</p>
+      </div>
+    </div>
+    <!-- Pyodide (브라우저에서 파이썬 실행용) -->
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.25.1/full/pyodide.js"></script>
+    <script type="module" src="/src/editor.js"></script>
+  </body>
+</html>
+
+
+
+
