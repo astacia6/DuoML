@@ -2561,6 +2561,64 @@ body {
   color: #666;
 }
 
+.regression-equation {
+  font-family: 'Courier New', monospace;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #667eea;
+  padding: 1rem;
+  background: #f0f4ff;
+  border-radius: 8px;
+  border: 1px solid #667eea;
+  margin: 1rem 0;
+  text-align: center;
+}
+
+.regression-chart-container {
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  background: white;
+  border: 1px solid #e5e5e7;
+  border-radius: 12px;
+}
+
+.regression-chart-container h6 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1d1d1f;
+  margin: 0 0 1rem 0;
+}
+
+.regression-chart-container canvas {
+  display: block;
+  margin: 0 auto;
+  border: 1px solid #e5e5e7;
+  border-radius: 8px;
+}
+
+.regression-3d-note {
+  padding: 1rem;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px solid #e5e5e7;
+}
+
+.regression-3d-note p {
+  margin: 0.5rem 0;
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.no-numeric-warning {
+  padding: 1rem;
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 8px;
+  color: #856404;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
 /* 변수 선정 스타일 */
 .variable-selection-group {
   margin-top: 1rem;

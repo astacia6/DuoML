@@ -1115,14 +1115,24 @@ function setupModelTraining() {
 function initializeModelSection(columns) {
   if (!columns) return;
 
-  // 독립 변수 체크박스 초기화
+  // 독립 변수 체크박스 초기화 (수치형 데이터만)
   const independentVariablesList = document.getElementById('independentVariablesList');
   if (independentVariablesList) {
+    // 수치형 컬럼만 필터링
+    const dataInfo = calculateDataFrameInfo(window.currentData || [], columns);
+    const numericColumns = dataInfo.columns
+      .filter(col => col.isNumeric)
+      .map(col => col.name);
+    
+    if (numericColumns.length === 0) {
+      independentVariablesList.innerHTML = '<p class="no-numeric-warning">수치형 데이터가 없습니다.</p>';
+    } else {
+    
     // 저장된 독립 변수가 있으면 복원
     const savedIndependent = window.modelConfig?.independentVariables || [];
     
     let html = '<div class="variable-checkboxes-container">';
-    columns.forEach(col => {
+    numericColumns.forEach(col => {
       const isChecked = savedIndependent.includes(col);
       html += `
         <label class="variable-checkbox-label">
@@ -1130,21 +1140,22 @@ function initializeModelSection(columns) {
           <span>${escapeHtml(col)}</span>
         </label>
       `;
-    });
-    html += '</div>';
-    independentVariablesList.innerHTML = html;
-
-    // 체크박스 변경 이벤트 리스너 추가
-    const checkboxes = independentVariablesList.querySelectorAll('.independent-variable-checkbox');
-    checkboxes.forEach(checkbox => {
-      checkbox.addEventListener('change', () => {
-        updateIndependentVariables();
-        updateSaveButtonColor();
       });
-    });
+      html += '</div>';
+      independentVariablesList.innerHTML = html;
 
-    // 독립 변수 상태 업데이트
-    updateIndependentVariables();
+      // 체크박스 변경 이벤트 리스너 추가
+      const checkboxes = independentVariablesList.querySelectorAll('.independent-variable-checkbox');
+      checkboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', () => {
+          updateIndependentVariables();
+          updateSaveButtonColor();
+        });
+      });
+
+      // 독립 변수 상태 업데이트
+      updateIndependentVariables();
+    }
   }
 
   // 종속 변수 선택 드롭다운 초기화
@@ -1488,54 +1499,421 @@ function trainModel(algorithm, dependentVariable, independentVariables, trainRat
     resultsDiv.innerHTML = '<p>모델을 학습하는 중입니다...</p>';
   }
 
-  // 실제 모델 학습은 Python/Pyodide를 통해 실행
-  // 여기서는 간단한 시뮬레이션 결과를 표시
-  setTimeout(() => {
-    if (resultsDiv) {
-      const isClustering = algorithm === 'kmeans';
-      let resultHTML = `
-        <div class="model-result-content">
-          <h5 class="result-title">학습 완료</h5>
-          <div class="result-info">
-            <p><strong>알고리즘:</strong> ${getAlgorithmName(algorithm)}</p>
-            ${!isClustering ? `
-              <p><strong>종속 변수:</strong> ${escapeHtml(dependentVariable)}</p>
-              <p><strong>독립 변수:</strong> ${independentVariables.map(v => escapeHtml(v)).join(', ')}</p>
-            ` : ''}
-            <p><strong>훈련 데이터 비율:</strong> ${(trainRatio * 100).toFixed(0)}%</p>
-            <p><strong>테스트 데이터 비율:</strong> ${((1 - trainRatio) * 100).toFixed(0)}%</p>
-          </div>
-      `;
-
-      if (!isClustering) {
-        // 회귀/분류 모델의 경우 성능 지표 표시
-        resultHTML += `
-          <div class="model-metrics">
-            <h6>모델 성능</h6>
-            <p>실제 모델 학습은 코드 모드에서 Python을 통해 실행됩니다.</p>
-            <p>노코드 모드에서는 설정만 저장됩니다.</p>
-          </div>
-        `;
-      } else {
-        // 군집 모델의 경우
-        resultHTML += `
-          <div class="model-metrics">
-            <h6>클러스터링 결과</h6>
-            <p>실제 클러스터링은 코드 모드에서 Python을 통해 실행됩니다.</p>
-            <p>노코드 모드에서는 설정만 저장됩니다.</p>
-          </div>
-        `;
-      }
-
-      resultHTML += '</div>';
-      resultsDiv.innerHTML = resultHTML;
-    }
-
+  // 선형회귀인 경우 실제 학습 수행
+  if (algorithm === 'linear_regression' && !window.currentData) {
+    alert('데이터를 불러오는 중입니다. 잠시 후 다시 시도해주세요.');
     if (trainBtn) {
       trainBtn.disabled = false;
       trainBtn.textContent = '모델 학습하기';
     }
-  }, 1000);
+    return;
+  }
+
+  if (algorithm === 'linear_regression') {
+    // 선형회귀 학습
+    trainLinearRegression(dependentVariable, independentVariables, trainRatio, hyperparameters, resultsDiv, trainBtn);
+  } else {
+    // 다른 알고리즘은 기존 로직
+    setTimeout(() => {
+      if (resultsDiv) {
+        const isClustering = algorithm === 'kmeans';
+        let resultHTML = `
+          <div class="model-result-content">
+            <h5 class="result-title">학습 완료</h5>
+            <div class="result-info">
+              <p><strong>알고리즘:</strong> ${getAlgorithmName(algorithm)}</p>
+              ${!isClustering ? `
+                <p><strong>종속 변수:</strong> ${escapeHtml(dependentVariable)}</p>
+                <p><strong>독립 변수:</strong> ${independentVariables.map(v => escapeHtml(v)).join(', ')}</p>
+              ` : ''}
+              <p><strong>훈련 데이터 비율:</strong> ${(trainRatio * 100).toFixed(0)}%</p>
+              <p><strong>테스트 데이터 비율:</strong> ${((1 - trainRatio) * 100).toFixed(0)}%</p>
+            </div>
+        `;
+
+        if (!isClustering) {
+          resultHTML += `
+            <div class="model-metrics">
+              <h6>모델 성능</h6>
+              <p>실제 모델 학습은 코드 모드에서 Python을 통해 실행됩니다.</p>
+              <p>노코드 모드에서는 설정만 저장됩니다.</p>
+            </div>
+          `;
+        } else {
+          resultHTML += `
+            <div class="model-metrics">
+              <h6>클러스터링 결과</h6>
+              <p>실제 클러스터링은 코드 모드에서 Python을 통해 실행됩니다.</p>
+              <p>노코드 모드에서는 설정만 저장됩니다.</p>
+            </div>
+          `;
+        }
+
+        resultHTML += '</div>';
+        resultsDiv.innerHTML = resultHTML;
+      }
+
+      if (trainBtn) {
+        trainBtn.disabled = false;
+        trainBtn.textContent = '모델 학습하기';
+      }
+    }, 1000);
+  }
+}
+
+// 선형회귀 학습
+function trainLinearRegression(dependentVariable, independentVariables, trainRatio, hyperparameters, resultsDiv, trainBtn) {
+  const data = window.currentData;
+  const fitIntercept = hyperparameters.fit_intercept !== false;
+
+  // 데이터 준비
+  const X = [];
+  const y = [];
+  
+  data.forEach(row => {
+    const xRow = independentVariables.map(col => {
+      const val = parseFloat(row[col]);
+      return isNaN(val) ? null : val;
+    });
+    
+    const yVal = parseFloat(row[dependentVariable]);
+    
+    // 모든 값이 유효한 경우만 추가
+    if (!xRow.includes(null) && !isNaN(yVal)) {
+      X.push(xRow);
+      y.push(yVal);
+    }
+  });
+
+  if (X.length === 0) {
+    alert('유효한 데이터가 없습니다.');
+    if (trainBtn) {
+      trainBtn.disabled = false;
+      trainBtn.textContent = '모델 학습하기';
+    }
+    return;
+  }
+
+  // 선형회귀 계산 (최소제곱법)
+  const coefficients = calculateLinearRegression(X, y, fitIntercept);
+  
+  // 회귀식 생성
+  const equation = generateRegressionEquation(coefficients, independentVariables, fitIntercept);
+  
+  // R² 계산
+  const rSquared = calculateRSquared(X, y, coefficients, fitIntercept);
+
+  // 결과 표시
+  let resultHTML = `
+    <div class="model-result-content">
+      <h5 class="result-title">학습 완료</h5>
+      <div class="result-info">
+        <p><strong>알고리즘:</strong> 선형회귀</p>
+        <p><strong>종속 변수:</strong> ${escapeHtml(dependentVariable)}</p>
+        <p><strong>독립 변수:</strong> ${independentVariables.map(v => escapeHtml(v)).join(', ')}</p>
+        <p><strong>훈련 데이터 비율:</strong> ${(trainRatio * 100).toFixed(0)}%</p>
+        <p><strong>테스트 데이터 비율:</strong> ${((1 - trainRatio) * 100).toFixed(0)}%</p>
+      </div>
+      <div class="model-metrics">
+        <h6>회귀식</h6>
+        <div class="regression-equation">${equation}</div>
+        <p><strong>R² (결정계수):</strong> ${rSquared.toFixed(4)}</p>
+      </div>
+  `;
+
+  // 그래프 표시 (1차원, 2차원, 3차원까지)
+  if (independentVariables.length <= 3) {
+    resultHTML += `
+      <div class="regression-chart-container">
+        <h6>회귀 그래프</h6>
+        <div id="regressionChartContainer"></div>
+      </div>
+    `;
+  }
+
+  resultHTML += '</div>';
+  resultsDiv.innerHTML = resultHTML;
+
+  // 그래프 그리기
+  if (independentVariables.length <= 3) {
+    setTimeout(() => {
+      drawRegressionChart(X, y, coefficients, independentVariables, dependentVariable, fitIntercept);
+    }, 100);
+  }
+
+  if (trainBtn) {
+    trainBtn.disabled = false;
+    trainBtn.textContent = '모델 학습하기';
+  }
+}
+
+// 선형회귀 계수 계산 (최소제곱법)
+function calculateLinearRegression(X, y, fitIntercept) {
+  const n = X.length;
+  const m = X[0].length;
+
+  if (fitIntercept) {
+    // 절편 포함: y = a0 + a1*x1 + a2*x2 + ...
+    // X 행렬에 1 컬럼 추가
+    const XWithIntercept = X.map(row => [1, ...row]);
+    return solveNormalEquation(XWithIntercept, y);
+  } else {
+    // 절편 없음: y = a1*x1 + a2*x2 + ...
+    return solveNormalEquation(X, y);
+  }
+}
+
+// 정규방정식 풀이
+function solveNormalEquation(X, y) {
+  const n = X.length;
+  const m = X[0].length;
+
+  // X^T * X 계산
+  const XTX = [];
+  for (let i = 0; i < m; i++) {
+    XTX[i] = [];
+    for (let j = 0; j < m; j++) {
+      let sum = 0;
+      for (let k = 0; k < n; k++) {
+        sum += X[k][i] * X[k][j];
+      }
+      XTX[i][j] = sum;
+    }
+  }
+
+  // X^T * y 계산
+  const XTy = [];
+  for (let i = 0; i < m; i++) {
+    let sum = 0;
+    for (let k = 0; k < n; k++) {
+      sum += X[k][i] * y[k];
+    }
+    XTy[i] = sum;
+  }
+
+  // (X^T * X)^(-1) * X^T * y 계산 (가우스 소거법)
+  return gaussianElimination(XTX, XTy);
+}
+
+// 가우스 소거법
+function gaussianElimination(A, b) {
+  const n = A.length;
+  const augmented = A.map((row, i) => [...row, b[i]]);
+
+  // 전진 소거
+  for (let i = 0; i < n; i++) {
+    // 피벗 찾기
+    let maxRow = i;
+    for (let k = i + 1; k < n; k++) {
+      if (Math.abs(augmented[k][i]) > Math.abs(augmented[maxRow][i])) {
+        maxRow = k;
+      }
+    }
+    [augmented[i], augmented[maxRow]] = [augmented[maxRow], augmented[i]];
+
+    // 소거
+    for (let k = i + 1; k < n; k++) {
+      const factor = augmented[k][i] / augmented[i][i];
+      for (let j = i; j < n + 1; j++) {
+        augmented[k][j] -= factor * augmented[i][j];
+      }
+    }
+  }
+
+  // 후진 대입
+  const x = new Array(n);
+  for (let i = n - 1; i >= 0; i--) {
+    x[i] = augmented[i][n];
+    for (let j = i + 1; j < n; j++) {
+      x[i] -= augmented[i][j] * x[j];
+    }
+    x[i] /= augmented[i][i];
+  }
+
+  return x;
+}
+
+// 회귀식 문자열 생성
+function generateRegressionEquation(coefficients, independentVariables, fitIntercept) {
+  let equation = 'y = ';
+  let terms = [];
+
+  if (fitIntercept) {
+    const intercept = coefficients[0];
+    terms.push(`${intercept >= 0 ? '' : '-'}${Math.abs(intercept).toFixed(4)}`);
+    
+    for (let i = 1; i < coefficients.length; i++) {
+      const coef = coefficients[i];
+      const varName = independentVariables[i - 1];
+      if (Math.abs(coef) > 1e-10) {
+        terms.push(`${coef >= 0 ? '+' : ''}${coef.toFixed(4)}${escapeHtml(varName)}`);
+      }
+    }
+  } else {
+    for (let i = 0; i < coefficients.length; i++) {
+      const coef = coefficients[i];
+      const varName = independentVariables[i];
+      if (Math.abs(coef) > 1e-10) {
+        terms.push(`${coef >= 0 ? '' : '-'}${Math.abs(coef).toFixed(4)}${escapeHtml(varName)}`);
+        if (i < coefficients.length - 1 && coefficients[i + 1] >= 0) {
+          terms[terms.length - 1] += ' +';
+        }
+      }
+    }
+  }
+
+  equation += terms.join(' ');
+  return equation;
+}
+
+// R² 계산
+function calculateRSquared(X, y, coefficients, fitIntercept) {
+  const n = y.length;
+  const yMean = y.reduce((a, b) => a + b, 0) / n;
+  
+  let ssRes = 0; // 잔차 제곱합
+  let ssTot = 0; // 총 제곱합
+
+  for (let i = 0; i < n; i++) {
+    let predicted = 0;
+    if (fitIntercept) {
+      predicted = coefficients[0];
+      for (let j = 0; j < X[i].length; j++) {
+        predicted += coefficients[j + 1] * X[i][j];
+      }
+    } else {
+      for (let j = 0; j < X[i].length; j++) {
+        predicted += coefficients[j] * X[i][j];
+      }
+    }
+    
+    ssRes += Math.pow(y[i] - predicted, 2);
+    ssTot += Math.pow(y[i] - yMean, 2);
+  }
+
+  return 1 - (ssRes / ssTot);
+}
+
+// 회귀 그래프 그리기
+function drawRegressionChart(X, y, coefficients, independentVariables, dependentVariable, fitIntercept) {
+  const container = document.getElementById('regressionChartContainer');
+  if (!container) return;
+
+  const dim = independentVariables.length;
+
+  if (dim === 1) {
+    // 1차원: 2D 산점도 + 회귀선
+    draw2DRegressionChart(X, y, coefficients, independentVariables[0], dependentVariable, fitIntercept, container);
+  } else if (dim === 2) {
+    // 2차원: 3D 산점도 + 회귀 평면
+    draw3DRegressionChart(X, y, coefficients, independentVariables, dependentVariable, fitIntercept, container);
+  } else if (dim === 3) {
+    // 3차원: 3D 산점도 (3개 변수 중 2개 선택)
+    draw3DRegressionChart(X, y, coefficients, independentVariables.slice(0, 2), dependentVariable, fitIntercept, container);
+  }
+}
+
+// 2D 회귀 그래프 (1차원)
+function draw2DRegressionChart(X, y, coefficients, xVar, yVar, fitIntercept, container) {
+  container.innerHTML = '<canvas id="regressionChart2D" width="600" height="400"></canvas>';
+  const canvas = document.getElementById('regressionChart2D');
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  const width = canvas.width;
+  const height = canvas.height;
+  const padding = 50;
+
+  // 데이터 포인트
+  const xValues = X.map(row => row[0]);
+  const xMin = Math.min(...xValues);
+  const xMax = Math.max(...xValues);
+  const yMin = Math.min(...y);
+  const yMax = Math.max(...y);
+  const xRange = xMax - xMin || 1;
+  const yRange = yMax - yMin || 1;
+
+  // 배경
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, width, height);
+
+  // 그리드
+  ctx.strokeStyle = '#e5e5e7';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 10; i++) {
+    const x = padding + (i / 10) * (width - 2 * padding);
+    ctx.beginPath();
+    ctx.moveTo(x, padding);
+    ctx.lineTo(x, height - padding);
+    ctx.stroke();
+
+    const y = padding + (i / 10) * (height - 2 * padding);
+    ctx.beginPath();
+    ctx.moveTo(padding, y);
+    ctx.lineTo(width - padding, y);
+    ctx.stroke();
+  }
+
+  // 회귀선 그리기
+  ctx.strokeStyle = '#667eea';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  const x1 = padding;
+  const x2 = width - padding;
+  const y1 = height - padding - ((predictY(coefficients, [xMin], fitIntercept) - yMin) / yRange) * (height - 2 * padding);
+  const y2 = height - padding - ((predictY(coefficients, [xMax], fitIntercept) - yMin) / yRange) * (height - 2 * padding);
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+
+  // 데이터 포인트
+  ctx.fillStyle = '#667eea';
+  for (let i = 0; i < X.length; i++) {
+    const x = padding + ((xValues[i] - xMin) / xRange) * (width - 2 * padding);
+    const yPos = height - padding - ((y[i] - yMin) / yRange) * (height - 2 * padding);
+    ctx.beginPath();
+    ctx.arc(x, yPos, 4, 0, 2 * Math.PI);
+    ctx.fill();
+  }
+
+  // 축 레이블
+  ctx.fillStyle = '#1d1d1f';
+  ctx.font = '12px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText(xVar, width / 2, height - 10);
+  ctx.save();
+  ctx.translate(15, height / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText(yVar, 0, 0);
+  ctx.restore();
+}
+
+// 3D 회귀 그래프 (2차원, 3차원)
+function draw3DRegressionChart(X, y, coefficients, independentVariables, dependentVariable, fitIntercept, container) {
+  container.innerHTML = `
+    <div class="regression-3d-note">
+      <p>3D 그래프는 코드 모드에서 Python의 matplotlib을 통해 표시됩니다.</p>
+      <p>독립 변수: ${independentVariables.map(v => escapeHtml(v)).join(', ')}</p>
+      <p>종속 변수: ${escapeHtml(dependentVariable)}</p>
+    </div>
+  `;
+}
+
+// 예측값 계산
+function predictY(coefficients, x, fitIntercept) {
+  if (fitIntercept) {
+    let result = coefficients[0];
+    for (let i = 0; i < x.length; i++) {
+      result += coefficients[i + 1] * x[i];
+    }
+    return result;
+  } else {
+    let result = 0;
+    for (let i = 0; i < x.length; i++) {
+      result += coefficients[i] * x[i];
+    }
+    return result;
+  }
 }
 
 // 알고리즘 이름 가져오기
