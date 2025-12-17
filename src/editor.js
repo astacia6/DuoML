@@ -19,6 +19,9 @@ window.originalFileName = window.originalFileName || null;
 window.operationHistory = window.operationHistory || [];
 window.generatedCodeCells = window.generatedCodeCells || [];
 window.chartConfigs = window.chartConfigs || [];
+window.selectedFeatures = window.selectedFeatures || [];
+window.featureExtractionState = window.featureExtractionState || { pairplotGenerated: false, heatmapGenerated: false };
+window.modelConfig = window.modelConfig || null;
 
 // Pyodide 초기화
 async function getPyodideInstance() {
@@ -472,15 +475,164 @@ function renderNoCodeEditor() {
             <button class="apply-button" id="applyNormalizeBtn">적용하기</button>
           </div>
         </div>
+
+        <!-- 데이터 시각화 -->
+        <div class="preprocessing-block">
+          <h4 class="block-title">데이터 시각화</h4>
+          
+          <div id="chartsContainer" class="charts-container">
+            <!-- 그래프들이 여기에 동적으로 추가됩니다 -->
+            <div class="visualization-actions">
+              <button class="action-button" id="addChartBtn">그래프 추가하기</button>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div class="no-code-section" id="visualizationSection" style="display: none;">
-        <h3 class="section-title">3. 데이터 시각화</h3>
+      <div class="no-code-section" id="featureExtractionSection" style="display: none;">
+        <h3 class="section-title">4. 핵심 속성 추출하기</h3>
         
-        <div id="chartsContainer" class="charts-container">
-          <!-- 그래프들이 여기에 동적으로 추가됩니다 -->
-          <div class="visualization-actions">
-            <button class="action-button" id="addChartBtn">그래프 추가하기</button>
+        <!-- 속성 선택 -->
+        <div class="preprocessing-block">
+          <h4 class="block-title">속성 선택</h4>
+          <p class="block-hint">분석하고 싶은 속성을 선택하세요. (최소 2개 이상 선택)</p>
+          <div id="featureSelectionList" class="feature-selection-list">
+            <!-- 속성 체크박스가 여기에 동적으로 생성됩니다 -->
+          </div>
+          <div class="preprocessing-actions" style="margin-top: 1rem;">
+            <button class="action-button" id="selectAllFeaturesBtn">전체 선택</button>
+            <button class="action-button" id="deselectAllFeaturesBtn">전체 해제</button>
+          </div>
+        </div>
+
+        <!-- 산점도 (Pairplot) -->
+        <div class="preprocessing-block">
+          <h4 class="block-title">산점도 (Pairplot)</h4>
+          <p class="block-hint">선택한 속성들 간의 관계를 산점도로 확인할 수 있습니다.</p>
+          <div class="preprocessing-actions">
+            <button class="action-button" id="generatePairplotBtn">산점도 생성하기</button>
+          </div>
+          <div id="pairplotContainer" class="pairplot-container" style="display: none;">
+            <!-- Pairplot이 여기에 동적으로 생성됩니다 -->
+          </div>
+        </div>
+
+        <!-- 히트맵 -->
+        <div class="preprocessing-block">
+          <h4 class="block-title">히트맵</h4>
+          <p class="block-hint">선택한 속성들 간의 상관관계를 히트맵으로 확인할 수 있습니다.</p>
+          <div class="preprocessing-actions">
+            <button class="action-button" id="generateHeatmapBtn">히트맵 생성하기</button>
+          </div>
+          <div id="heatmapContainer" class="heatmap-container" style="display: none;">
+            <!-- 히트맵이 여기에 동적으로 생성됩니다 -->
+          </div>
+        </div>
+      </div>
+
+      <div class="no-code-section" id="modelSection" style="display: none;">
+        <h3 class="section-title">5. 모델 생성하기</h3>
+        
+        <!-- 알고리즘 선정 -->
+        <div class="preprocessing-block">
+          <h4 class="block-title">알고리즘 선정</h4>
+          <p class="block-hint">사용할 머신러닝 알고리즘을 선택하세요.</p>
+          <div class="algorithm-selection">
+            <div class="algorithm-group">
+              <h5 class="algorithm-group-title">회귀</h5>
+              <label class="algorithm-option">
+                <input type="radio" name="algorithm" value="linear_regression">
+                <span>선형회귀 (Linear Regression)</span>
+              </label>
+            </div>
+            <div class="algorithm-group">
+              <h5 class="algorithm-group-title">분류</h5>
+              <label class="algorithm-option">
+                <input type="radio" name="algorithm" value="decision_tree">
+                <span>결정트리 (Decision Tree)</span>
+              </label>
+              <label class="algorithm-option">
+                <input type="radio" name="algorithm" value="knn">
+                <span>kNN (k-Nearest Neighbors)</span>
+              </label>
+              <label class="algorithm-option">
+                <input type="radio" name="algorithm" value="logistic_regression">
+                <span>로지스틱회귀 (Logistic Regression)</span>
+              </label>
+            </div>
+            <div class="algorithm-group">
+              <h5 class="algorithm-group-title">군집</h5>
+              <label class="algorithm-option">
+                <input type="radio" name="algorithm" value="kmeans">
+                <span>K-means</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 변수 선정 (회귀/분류용) -->
+        <div class="preprocessing-block" id="targetVariableBlock" style="display: none;">
+          <h4 class="block-title">변수 선정</h4>
+          
+          <!-- 독립 변수 선택 -->
+          <div class="variable-selection-group">
+            <h5 class="variable-group-title">독립 변수 (여러 개 선택 가능)</h5>
+            <p class="block-hint">예측에 사용할 변수들을 선택하세요.</p>
+            <div id="independentVariablesList" class="variable-checkboxes">
+              <!-- 독립 변수 체크박스가 여기에 동적으로 생성됩니다 -->
+            </div>
+            <div class="preprocessing-actions" style="margin-top: 1rem;">
+              <button class="action-button" id="selectAllIndependentBtn">전체 선택</button>
+              <button class="action-button" id="deselectAllIndependentBtn">전체 해제</button>
+            </div>
+          </div>
+
+          <!-- 종속 변수 선택 -->
+          <div class="variable-selection-group" style="margin-top: 1.5rem;">
+            <h5 class="variable-group-title">종속 변수 (하나만 선택)</h5>
+            <p class="block-hint">예측하고자 하는 변수를 선택하세요.</p>
+            <div class="preprocessing-actions">
+              <select id="dependentVariableSelect" class="target-variable-select">
+                <option value="">선택하세요</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- 훈련/테스트 데이터 분할 -->
+        <div class="preprocessing-block" id="trainTestSplitBlock" style="display: none;">
+          <h4 class="block-title">훈련 데이터와 테스트 데이터 분할</h4>
+          <p class="block-hint">전체 데이터를 훈련 데이터와 테스트 데이터로 나누는 비율을 설정하세요.</p>
+          <div class="split-ratio-section">
+            <div class="split-ratio-input">
+              <label class="split-ratio-label">훈련 데이터 비율:</label>
+              <input type="number" id="trainRatioInput" class="ratio-input" min="0.1" max="0.9" step="0.1" value="0.8">
+              <span class="ratio-display">80%</span>
+            </div>
+            <div class="split-ratio-input">
+              <label class="split-ratio-label">테스트 데이터 비율:</label>
+              <input type="number" id="testRatioInput" class="ratio-input" min="0.1" max="0.9" step="0.1" value="0.2" readonly>
+              <span class="ratio-display">20%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 하이퍼파라미터 조정 -->
+        <div class="preprocessing-block" id="hyperparameterBlock" style="display: none;">
+          <h4 class="block-title">하이퍼파라미터 조정</h4>
+          <p class="block-hint">알고리즘의 성능을 조정하기 위한 하이퍼파라미터를 설정하세요.</p>
+          <div id="hyperparameterControls" class="hyperparameter-controls">
+            <!-- 알고리즘별 하이퍼파라미터가 여기에 동적으로 생성됩니다 -->
+          </div>
+        </div>
+
+        <!-- 모델 학습 -->
+        <div class="preprocessing-block" id="trainModelBlock" style="display: none;">
+          <div class="preprocessing-actions">
+            <button class="action-button" id="trainModelBtn">모델 학습하기</button>
+          </div>
+          <div id="modelResults" class="model-results" style="display: none;">
+            <!-- 모델 학습 결과가 여기에 표시됩니다 -->
           </div>
         </div>
       </div>
@@ -867,6 +1019,535 @@ function setupPreprocessing() {
   if (addChartBtn) {
     addChartBtn.addEventListener('click', handleAddChart);
   }
+
+  // 핵심 속성 추출 이벤트
+  setupFeatureExtraction();
+}
+
+// 핵심 속성 추출 설정
+function setupFeatureExtraction() {
+  const selectAllBtn = document.getElementById('selectAllFeaturesBtn');
+  const deselectAllBtn = document.getElementById('deselectAllFeaturesBtn');
+  const generatePairplotBtn = document.getElementById('generatePairplotBtn');
+  const generateHeatmapBtn = document.getElementById('generateHeatmapBtn');
+
+  if (selectAllBtn) {
+    selectAllBtn.addEventListener('click', () => {
+      const checkboxes = document.querySelectorAll('.feature-checkbox');
+      checkboxes.forEach(cb => cb.checked = true);
+      updateSelectedFeatures();
+      updateSaveButtonColor();
+    });
+  }
+
+  if (deselectAllBtn) {
+    deselectAllBtn.addEventListener('click', () => {
+      const checkboxes = document.querySelectorAll('.feature-checkbox');
+      checkboxes.forEach(cb => cb.checked = false);
+      updateSelectedFeatures();
+      updateSaveButtonColor();
+    });
+  }
+
+  if (generatePairplotBtn) {
+    generatePairplotBtn.addEventListener('click', handleGeneratePairplot);
+  }
+
+  if (generateHeatmapBtn) {
+    generateHeatmapBtn.addEventListener('click', handleGenerateHeatmap);
+  }
+
+  // 모델 생성 이벤트
+  setupModelTraining();
+}
+
+// 모델 생성 설정
+function setupModelTraining() {
+  // 알고리즘 선택 이벤트
+  const algorithmRadios = document.querySelectorAll('input[name="algorithm"]');
+  algorithmRadios.forEach(radio => {
+    radio.addEventListener('change', handleAlgorithmChange);
+  });
+
+  // 종속 변수 선택 이벤트
+  const dependentVariableSelect = document.getElementById('dependentVariableSelect');
+  if (dependentVariableSelect) {
+    dependentVariableSelect.addEventListener('change', () => {
+      updateModelTrainingUI();
+      updateSaveButtonColor();
+    });
+  }
+
+  // 독립 변수 전체 선택/해제 버튼
+  const selectAllIndependentBtn = document.getElementById('selectAllIndependentBtn');
+  const deselectAllIndependentBtn = document.getElementById('deselectAllIndependentBtn');
+  if (selectAllIndependentBtn) {
+    selectAllIndependentBtn.addEventListener('click', () => {
+      const checkboxes = document.querySelectorAll('.independent-variable-checkbox');
+      checkboxes.forEach(cb => cb.checked = true);
+      updateIndependentVariables();
+      updateSaveButtonColor();
+    });
+  }
+  if (deselectAllIndependentBtn) {
+    deselectAllIndependentBtn.addEventListener('click', () => {
+      const checkboxes = document.querySelectorAll('.independent-variable-checkbox');
+      checkboxes.forEach(cb => cb.checked = false);
+      updateIndependentVariables();
+      updateSaveButtonColor();
+    });
+  }
+
+  // 훈련/테스트 비율 조정 이벤트
+  const trainRatioInput = document.getElementById('trainRatioInput');
+  if (trainRatioInput) {
+    trainRatioInput.addEventListener('input', handleTrainRatioChange);
+  }
+
+  // 모델 학습 버튼
+  const trainModelBtn = document.getElementById('trainModelBtn');
+  if (trainModelBtn) {
+    trainModelBtn.addEventListener('click', handleTrainModel);
+  }
+}
+
+// 모델 섹션 초기화
+function initializeModelSection(columns) {
+  if (!columns) return;
+
+  // 독립 변수 체크박스 초기화
+  const independentVariablesList = document.getElementById('independentVariablesList');
+  if (independentVariablesList) {
+    // 저장된 독립 변수가 있으면 복원
+    const savedIndependent = window.modelConfig?.independentVariables || [];
+    
+    let html = '<div class="variable-checkboxes-container">';
+    columns.forEach(col => {
+      const isChecked = savedIndependent.includes(col);
+      html += `
+        <label class="variable-checkbox-label">
+          <input type="checkbox" class="independent-variable-checkbox" data-column="${escapeHtml(col)}" ${isChecked ? 'checked' : ''}>
+          <span>${escapeHtml(col)}</span>
+        </label>
+      `;
+    });
+    html += '</div>';
+    independentVariablesList.innerHTML = html;
+
+    // 체크박스 변경 이벤트 리스너 추가
+    const checkboxes = independentVariablesList.querySelectorAll('.independent-variable-checkbox');
+    checkboxes.forEach(checkbox => {
+      checkbox.addEventListener('change', () => {
+        updateIndependentVariables();
+        updateSaveButtonColor();
+      });
+    });
+
+    // 독립 변수 상태 업데이트
+    updateIndependentVariables();
+  }
+
+  // 종속 변수 선택 드롭다운 초기화
+  const dependentVariableSelect = document.getElementById('dependentVariableSelect');
+  if (dependentVariableSelect) {
+    dependentVariableSelect.innerHTML = '<option value="">선택하세요</option>';
+    columns.forEach(col => {
+      const option = document.createElement('option');
+      option.value = escapeHtml(col);
+      option.textContent = escapeHtml(col);
+      dependentVariableSelect.appendChild(option);
+    });
+
+    // 저장된 종속 변수가 있으면 복원
+    if (window.modelConfig && window.modelConfig.dependentVariable) {
+      dependentVariableSelect.value = window.modelConfig.dependentVariable;
+    }
+  }
+
+  // 저장된 모델 설정이 있으면 복원
+  if (window.modelConfig) {
+    // 알고리즘 복원
+    if (window.modelConfig.algorithm) {
+      const algorithmRadio = document.querySelector(`input[name="algorithm"][value="${window.modelConfig.algorithm}"]`);
+      if (algorithmRadio) {
+        algorithmRadio.checked = true;
+        handleAlgorithmChange();
+      }
+    }
+
+    // 종속 변수 복원 (이미 위에서 처리됨)
+
+    // 훈련/테스트 비율 복원
+    if (window.modelConfig.trainRatio) {
+      const trainRatioInput = document.getElementById('trainRatioInput');
+      if (trainRatioInput) {
+        trainRatioInput.value = window.modelConfig.trainRatio;
+        handleTrainRatioChange();
+      }
+    }
+
+    // UI 업데이트
+    setTimeout(() => {
+      updateModelTrainingUI();
+    }, 100);
+  }
+}
+
+// 독립 변수 업데이트
+function updateIndependentVariables() {
+  const selectedColumns = Array.from(document.querySelectorAll('.independent-variable-checkbox:checked'))
+    .map(cb => cb.getAttribute('data-column'));
+  
+  if (!window.modelConfig) {
+    window.modelConfig = {};
+  }
+  window.modelConfig.independentVariables = selectedColumns;
+}
+
+// 알고리즘 변경 핸들러
+function handleAlgorithmChange() {
+  const selectedAlgorithm = document.querySelector('input[name="algorithm"]:checked')?.value;
+  if (!selectedAlgorithm) {
+    document.getElementById('targetVariableBlock').style.display = 'none';
+    document.getElementById('trainTestSplitBlock').style.display = 'none';
+    document.getElementById('hyperparameterBlock').style.display = 'none';
+    document.getElementById('trainModelBlock').style.display = 'none';
+    return;
+  }
+
+  // 군집 알고리즘(K-means)은 타겟 변수가 필요 없음
+  const isClustering = selectedAlgorithm === 'kmeans';
+  const targetVariableBlock = document.getElementById('targetVariableBlock');
+  if (targetVariableBlock) {
+    targetVariableBlock.style.display = isClustering ? 'none' : 'block';
+  }
+
+  // 훈련/테스트 분할 블록 표시
+  const trainTestSplitBlock = document.getElementById('trainTestSplitBlock');
+  if (trainTestSplitBlock) {
+    trainTestSplitBlock.style.display = 'block';
+  }
+
+  // 하이퍼파라미터 블록 표시 및 생성
+  renderHyperparameters(selectedAlgorithm);
+
+  updateModelTrainingUI();
+  updateSaveButtonColor();
+}
+
+// 하이퍼파라미터 렌더링
+function renderHyperparameters(algorithm) {
+  const hyperparameterControls = document.getElementById('hyperparameterControls');
+  const hyperparameterBlock = document.getElementById('hyperparameterBlock');
+  if (!hyperparameterControls || !hyperparameterBlock) return;
+
+  hyperparameterBlock.style.display = 'block';
+
+  let html = '';
+
+  // 저장된 하이퍼파라미터 가져오기
+  const savedParams = window.modelConfig?.hyperparameters || {};
+
+  switch (algorithm) {
+    case 'linear_regression':
+      html = `
+        <div class="hyperparameter-group">
+          <label class="hyperparameter-label">
+            <span>절편 사용 (fit_intercept)</span>
+            <input type="checkbox" id="linear_fit_intercept" ${savedParams.fit_intercept !== false ? 'checked' : ''}>
+          </label>
+        </div>
+      `;
+      break;
+
+    case 'decision_tree':
+      html = `
+        <div class="hyperparameter-group">
+          <label class="hyperparameter-label">
+            <span>최대 깊이 (max_depth)</span>
+            <input type="number" id="dt_max_depth" class="hyperparameter-input" min="1" max="50" value="${savedParams.max_depth || 10}">
+          </label>
+          <label class="hyperparameter-label">
+            <span>최소 분할 샘플 수 (min_samples_split)</span>
+            <input type="number" id="dt_min_samples_split" class="hyperparameter-input" min="2" value="${savedParams.min_samples_split || 2}">
+          </label>
+          <label class="hyperparameter-label">
+            <span>최소 리프 샘플 수 (min_samples_leaf)</span>
+            <input type="number" id="dt_min_samples_leaf" class="hyperparameter-input" min="1" value="${savedParams.min_samples_leaf || 1}">
+          </label>
+        </div>
+      `;
+      break;
+
+    case 'knn':
+      html = `
+        <div class="hyperparameter-group">
+          <label class="hyperparameter-label">
+            <span>이웃 수 (n_neighbors)</span>
+            <input type="number" id="knn_n_neighbors" class="hyperparameter-input" min="1" max="50" value="${savedParams.n_neighbors || 5}">
+          </label>
+          <label class="hyperparameter-label">
+            <span>가중치 (weights)</span>
+            <select id="knn_weights" class="hyperparameter-select">
+              <option value="uniform" ${savedParams.weights === 'uniform' ? 'selected' : ''}>균등 (uniform)</option>
+              <option value="distance" ${savedParams.weights === 'distance' ? 'selected' : ''}>거리 (distance)</option>
+            </select>
+          </label>
+        </div>
+      `;
+      break;
+
+    case 'logistic_regression':
+      html = `
+        <div class="hyperparameter-group">
+          <label class="hyperparameter-label">
+            <span>정규화 강도 (C)</span>
+            <input type="number" id="lr_C" class="hyperparameter-input" min="0.01" max="100" step="0.01" value="${savedParams.C || 1.0}">
+          </label>
+          <label class="hyperparameter-label">
+            <span>정규화 방법 (penalty)</span>
+            <select id="lr_penalty" class="hyperparameter-select">
+              <option value="l2" ${savedParams.penalty === 'l2' ? 'selected' : ''}>L2</option>
+              <option value="l1" ${savedParams.penalty === 'l1' ? 'selected' : ''}>L1</option>
+            </select>
+          </label>
+        </div>
+      `;
+      break;
+
+    case 'kmeans':
+      html = `
+        <div class="hyperparameter-group">
+          <label class="hyperparameter-label">
+            <span>클러스터 수 (n_clusters)</span>
+            <input type="number" id="kmeans_n_clusters" class="hyperparameter-input" min="2" max="20" value="${savedParams.n_clusters || 3}">
+          </label>
+          <label class="hyperparameter-label">
+            <span>초기화 방법 (init)</span>
+            <select id="kmeans_init" class="hyperparameter-select">
+              <option value="k-means++" ${savedParams.init === 'k-means++' ? 'selected' : ''}>k-means++</option>
+              <option value="random" ${savedParams.init === 'random' ? 'selected' : ''}>랜덤 (random)</option>
+            </select>
+          </label>
+          <label class="hyperparameter-label">
+            <span>최대 반복 횟수 (max_iter)</span>
+            <input type="number" id="kmeans_max_iter" class="hyperparameter-input" min="1" max="1000" value="${savedParams.max_iter || 300}">
+          </label>
+        </div>
+      `;
+      break;
+  }
+
+  hyperparameterControls.innerHTML = html;
+
+  // 하이퍼파라미터 변경 이벤트 추가
+  const inputs = hyperparameterControls.querySelectorAll('input, select');
+  inputs.forEach(input => {
+    input.addEventListener('change', () => {
+      updateSaveButtonColor();
+    });
+  });
+}
+
+// 훈련/테스트 비율 변경 핸들러
+function handleTrainRatioChange() {
+  const trainRatioInput = document.getElementById('trainRatioInput');
+  const testRatioInput = document.getElementById('testRatioInput');
+  if (!trainRatioInput || !testRatioInput) return;
+
+  const trainRatio = parseFloat(trainRatioInput.value);
+  const testRatio = 1 - trainRatio;
+  
+  testRatioInput.value = testRatio.toFixed(1);
+  
+  // 비율 표시 업데이트
+  const trainDisplay = trainRatioInput.nextElementSibling;
+  const testDisplay = testRatioInput.nextElementSibling;
+  if (trainDisplay) trainDisplay.textContent = `${(trainRatio * 100).toFixed(0)}%`;
+  if (testDisplay) testDisplay.textContent = `${(testRatio * 100).toFixed(0)}%`;
+
+  updateSaveButtonColor();
+}
+
+// 모델 학습 UI 업데이트
+function updateModelTrainingUI() {
+  const selectedAlgorithm = document.querySelector('input[name="algorithm"]:checked')?.value;
+  const dependentVariable = document.getElementById('dependentVariableSelect')?.value;
+  const independentVariables = Array.from(document.querySelectorAll('.independent-variable-checkbox:checked'))
+    .map(cb => cb.getAttribute('data-column'));
+  const isClustering = selectedAlgorithm === 'kmeans';
+  
+  const trainModelBlock = document.getElementById('trainModelBlock');
+  if (trainModelBlock) {
+    // 군집 알고리즘이거나 (종속 변수와 독립 변수가 모두 선택되었으면) 학습 버튼 표시
+    if (selectedAlgorithm && (isClustering || (dependentVariable && independentVariables.length > 0))) {
+      trainModelBlock.style.display = 'block';
+    } else {
+      trainModelBlock.style.display = 'none';
+    }
+  }
+}
+
+// 모델 학습 핸들러
+function handleTrainModel() {
+  if (!window.currentData || !window.currentColumns) {
+    alert('먼저 데이터를 업로드해주세요.');
+    return;
+  }
+
+  const selectedAlgorithm = document.querySelector('input[name="algorithm"]:checked')?.value;
+  if (!selectedAlgorithm) {
+    alert('알고리즘을 선택해주세요.');
+    return;
+  }
+
+  const isClustering = selectedAlgorithm === 'kmeans';
+  const dependentVariable = document.getElementById('dependentVariableSelect')?.value;
+  const independentVariables = Array.from(document.querySelectorAll('.independent-variable-checkbox:checked'))
+    .map(cb => cb.getAttribute('data-column'));
+  
+  if (!isClustering) {
+    if (!dependentVariable) {
+      alert('종속 변수를 선택해주세요.');
+      return;
+    }
+    if (independentVariables.length === 0) {
+      alert('독립 변수를 최소 1개 이상 선택해주세요.');
+      return;
+    }
+  }
+
+  // 하이퍼파라미터 수집
+  const hyperparameters = collectHyperparameters(selectedAlgorithm);
+  
+  // 훈련/테스트 비율
+  const trainRatio = parseFloat(document.getElementById('trainRatioInput')?.value || 0.8);
+
+  // 모델 설정 저장
+  window.modelConfig = {
+    algorithm: selectedAlgorithm,
+    dependentVariable: dependentVariable || null,
+    independentVariables: independentVariables || [],
+    trainRatio,
+    hyperparameters,
+  };
+
+  // 모델 학습 실행
+  trainModel(selectedAlgorithm, dependentVariable, independentVariables, trainRatio, hyperparameters);
+  
+  updateSaveButtonColor();
+}
+
+// 하이퍼파라미터 수집
+function collectHyperparameters(algorithm) {
+  const params = {};
+
+  switch (algorithm) {
+    case 'linear_regression':
+      params.fit_intercept = document.getElementById('linear_fit_intercept')?.checked !== false;
+      break;
+
+    case 'decision_tree':
+      params.max_depth = parseInt(document.getElementById('dt_max_depth')?.value || 10);
+      params.min_samples_split = parseInt(document.getElementById('dt_min_samples_split')?.value || 2);
+      params.min_samples_leaf = parseInt(document.getElementById('dt_min_samples_leaf')?.value || 1);
+      break;
+
+    case 'knn':
+      params.n_neighbors = parseInt(document.getElementById('knn_n_neighbors')?.value || 5);
+      params.weights = document.getElementById('knn_weights')?.value || 'uniform';
+      break;
+
+    case 'logistic_regression':
+      params.C = parseFloat(document.getElementById('lr_C')?.value || 1.0);
+      params.penalty = document.getElementById('lr_penalty')?.value || 'l2';
+      break;
+
+    case 'kmeans':
+      params.n_clusters = parseInt(document.getElementById('kmeans_n_clusters')?.value || 3);
+      params.init = document.getElementById('kmeans_init')?.value || 'k-means++';
+      params.max_iter = parseInt(document.getElementById('kmeans_max_iter')?.value || 300);
+      break;
+  }
+
+  return params;
+}
+
+// 모델 학습 실행
+function trainModel(algorithm, dependentVariable, independentVariables, trainRatio, hyperparameters) {
+  const trainBtn = document.getElementById('trainModelBtn');
+  const resultsDiv = document.getElementById('modelResults');
+  
+  if (trainBtn) {
+    trainBtn.disabled = true;
+    trainBtn.textContent = '학습 중...';
+  }
+
+  if (resultsDiv) {
+    resultsDiv.style.display = 'block';
+    resultsDiv.innerHTML = '<p>모델을 학습하는 중입니다...</p>';
+  }
+
+  // 실제 모델 학습은 Python/Pyodide를 통해 실행
+  // 여기서는 간단한 시뮬레이션 결과를 표시
+  setTimeout(() => {
+    if (resultsDiv) {
+      const isClustering = algorithm === 'kmeans';
+      let resultHTML = `
+        <div class="model-result-content">
+          <h5 class="result-title">학습 완료</h5>
+          <div class="result-info">
+            <p><strong>알고리즘:</strong> ${getAlgorithmName(algorithm)}</p>
+            ${!isClustering ? `
+              <p><strong>종속 변수:</strong> ${escapeHtml(dependentVariable)}</p>
+              <p><strong>독립 변수:</strong> ${independentVariables.map(v => escapeHtml(v)).join(', ')}</p>
+            ` : ''}
+            <p><strong>훈련 데이터 비율:</strong> ${(trainRatio * 100).toFixed(0)}%</p>
+            <p><strong>테스트 데이터 비율:</strong> ${((1 - trainRatio) * 100).toFixed(0)}%</p>
+          </div>
+      `;
+
+      if (!isClustering) {
+        // 회귀/분류 모델의 경우 성능 지표 표시
+        resultHTML += `
+          <div class="model-metrics">
+            <h6>모델 성능</h6>
+            <p>실제 모델 학습은 코드 모드에서 Python을 통해 실행됩니다.</p>
+            <p>노코드 모드에서는 설정만 저장됩니다.</p>
+          </div>
+        `;
+      } else {
+        // 군집 모델의 경우
+        resultHTML += `
+          <div class="model-metrics">
+            <h6>클러스터링 결과</h6>
+            <p>실제 클러스터링은 코드 모드에서 Python을 통해 실행됩니다.</p>
+            <p>노코드 모드에서는 설정만 저장됩니다.</p>
+          </div>
+        `;
+      }
+
+      resultHTML += '</div>';
+      resultsDiv.innerHTML = resultHTML;
+    }
+
+    if (trainBtn) {
+      trainBtn.disabled = false;
+      trainBtn.textContent = '모델 학습하기';
+    }
+  }, 1000);
+}
+
+// 알고리즘 이름 가져오기
+function getAlgorithmName(algorithm) {
+  const names = {
+    'linear_regression': '선형회귀',
+    'decision_tree': '결정트리',
+    'knn': 'kNN',
+    'logistic_regression': '로지스틱회귀',
+    'kmeans': 'K-means'
+  };
+  return names[algorithm] || algorithm;
 }
 
 // 파일 업로드 설정
@@ -971,16 +1652,24 @@ async function handleFileUpload(file) {
     renderDataFrameInfo(dataInfo, dataInfoGrid);
     dataInfoSection.style.display = 'block';
 
-    // 데이터 전처리 섹션 표시
+    // 데이터 전처리 섹션 표시 (시각화 포함)
     const preprocessingSection = document.getElementById('preprocessingSection');
     if (preprocessingSection) {
       preprocessingSection.style.display = 'block';
     }
 
-    // 데이터 시각화 섹션 표시
-    const visualizationSection = document.getElementById('visualizationSection');
-    if (visualizationSection) {
-      visualizationSection.style.display = 'block';
+    // 핵심 속성 추출 섹션 표시 및 속성 선택 리스트 생성
+    const featureExtractionSection = document.getElementById('featureExtractionSection');
+    if (featureExtractionSection) {
+      featureExtractionSection.style.display = 'block';
+      initializeFeatureSelection(columns);
+    }
+
+    // 모델 생성 섹션 표시
+    const modelSection = document.getElementById('modelSection');
+    if (modelSection && columns) {
+      modelSection.style.display = 'block';
+      initializeModelSection(columns);
     }
 
     // 업로드 박스 복원 (다시 업로드 가능하도록)
@@ -1293,7 +1982,6 @@ function restoreNoCodeFromMemory() {
   const dataTableSection = document.getElementById('dataTableSection');
   const dataInfoSection = document.getElementById('dataInfoSection');
   const preprocessingSection = document.getElementById('preprocessingSection');
-  const visualizationSection = document.getElementById('visualizationSection');
 
   if (dataTableContainer && dataInfoGrid) {
     const info = calculateDataFrameInfo(data, columns);
@@ -1304,7 +1992,20 @@ function restoreNoCodeFromMemory() {
   if (dataTableSection) dataTableSection.style.display = 'block';
   if (dataInfoSection) dataInfoSection.style.display = 'block';
   if (preprocessingSection) preprocessingSection.style.display = 'block';
-  if (visualizationSection) visualizationSection.style.display = 'block';
+
+  // 핵심 속성 추출 섹션 표시 및 속성 선택 리스트 초기화
+  const featureExtractionSection = document.getElementById('featureExtractionSection');
+  if (featureExtractionSection) {
+    featureExtractionSection.style.display = 'block';
+    initializeFeatureSelection(columns);
+  }
+
+  // 모델 생성 섹션 표시
+  const modelSection = document.getElementById('modelSection');
+  if (modelSection && columns) {
+    modelSection.style.display = 'block';
+    initializeModelSection(columns);
+  }
 
   // 그래프 UI 복원
   restoreChartsFromMemory();
@@ -1361,6 +2062,9 @@ function getCurrentState() {
       originalFileName: window.originalFileName || null,
       operationHistory: window.operationHistory || [],
       chartConfigs: window.chartConfigs || [],
+      selectedFeatures: window.selectedFeatures || [],
+      featureExtractionState: window.featureExtractionState || { pairplotGenerated: false, heatmapGenerated: false },
+      modelConfig: window.modelConfig || null,
     },
     codeState: {
       generatedCodeCells: window.generatedCodeCells || [],
@@ -1399,6 +2103,21 @@ function statesAreEqual(state1, state2) {
   const charts1 = JSON.stringify(nocode1.chartConfigs || []);
   const charts2 = JSON.stringify(nocode2.chartConfigs || []);
   if (charts1 !== charts2) return false;
+  
+  // selectedFeatures 비교
+  const features1 = JSON.stringify(nocode1.selectedFeatures || []);
+  const features2 = JSON.stringify(nocode2.selectedFeatures || []);
+  if (features1 !== features2) return false;
+  
+  // featureExtractionState 비교
+  const featState1 = JSON.stringify(nocode1.featureExtractionState || {});
+  const featState2 = JSON.stringify(nocode2.featureExtractionState || {});
+  if (featState1 !== featState2) return false;
+  
+  // modelConfig 비교
+  const model1 = JSON.stringify(nocode1.modelConfig || null);
+  const model2 = JSON.stringify(nocode2.modelConfig || null);
+  if (model1 !== model2) return false;
   
   // codeState 비교
   const code1 = JSON.stringify(state1.codeState?.generatedCodeCells || []);
@@ -1465,6 +2184,9 @@ async function handleSaveProject() {
         originalFileName: window.originalFileName || null,
         operationHistory: window.operationHistory || [],
         chartConfigs: window.chartConfigs || [],
+        selectedFeatures: window.selectedFeatures || [],
+        featureExtractionState: window.featureExtractionState || { pairplotGenerated: false, heatmapGenerated: false },
+        modelConfig: window.modelConfig || null,
       };
 
       const codeState = {
@@ -2210,13 +2932,15 @@ function restoreProjectState(projectData) {
     window.originalFileName = nocodeState.originalFileName || null;
     window.operationHistory = nocodeState.operationHistory || [];
     window.chartConfigs = nocodeState.chartConfigs || [];
+    window.selectedFeatures = nocodeState.selectedFeatures || [];
+    window.featureExtractionState = nocodeState.featureExtractionState || { pairplotGenerated: false, heatmapGenerated: false };
+    window.modelConfig = nocodeState.modelConfig || null;
 
     const dataTableContainer = document.getElementById('dataTableContainer');
     const dataInfoGrid = document.getElementById('dataInfoGrid');
     const dataTableSection = document.getElementById('dataTableSection');
     const dataInfoSection = document.getElementById('dataInfoSection');
     const preprocessingSection = document.getElementById('preprocessingSection');
-    const visualizationSection = document.getElementById('visualizationSection');
 
     if (dataTableContainer && dataInfoGrid) {
       const info = calculateDataFrameInfo(window.currentData, window.currentColumns);
@@ -2227,11 +2951,72 @@ function restoreProjectState(projectData) {
     if (dataTableSection) dataTableSection.style.display = 'block';
     if (dataInfoSection) dataInfoSection.style.display = 'block';
     if (preprocessingSection) preprocessingSection.style.display = 'block';
-    if (visualizationSection) visualizationSection.style.display = 'block';
+
+    // 핵심 속성 추출 섹션 표시 및 속성 선택 리스트 초기화
+    const featureExtractionSection = document.getElementById('featureExtractionSection');
+    if (featureExtractionSection && window.currentColumns) {
+      featureExtractionSection.style.display = 'block';
+      initializeFeatureSelection(window.currentColumns);
+      
+      // 저장된 pairplot/히트맵 복원
+      if (window.featureExtractionState) {
+        if (window.featureExtractionState.pairplotGenerated && window.selectedFeatures && window.selectedFeatures.length >= 2) {
+          // pairplot 복원 (약간의 지연을 두어 DOM이 준비된 후 실행)
+          setTimeout(() => {
+            handleGeneratePairplot();
+          }, 100);
+        }
+        if (window.featureExtractionState.heatmapGenerated && window.selectedFeatures && window.selectedFeatures.length >= 2) {
+          // 히트맵 복원 (약간의 지연을 두어 DOM이 준비된 후 실행)
+          setTimeout(() => {
+            handleGenerateHeatmap();
+          }, 200);
+        }
+      }
+    }
 
     // 저장된 그래프 설정이 있다면 복원
     if (Array.isArray(window.chartConfigs) && window.chartConfigs.length > 0) {
       restoreChartsFromMemory();
+    }
+
+    // 모델 생성 섹션 표시 및 복원
+    const modelSection = document.getElementById('modelSection');
+    if (modelSection && window.currentColumns) {
+      modelSection.style.display = 'block';
+      initializeModelSection(window.currentColumns);
+      
+      // 저장된 모델 학습 결과가 있으면 복원
+      if (window.modelConfig && window.modelConfig.algorithm) {
+        setTimeout(() => {
+          // 모델 학습 결과 표시
+          const resultsDiv = document.getElementById('modelResults');
+          if (resultsDiv && window.modelConfig) {
+            const config = window.modelConfig;
+            const isClustering = config.algorithm === 'kmeans';
+            let resultHTML = `
+              <div class="model-result-content">
+                <h5 class="result-title">학습 완료</h5>
+                <div class="result-info">
+                  <p><strong>알고리즘:</strong> ${getAlgorithmName(config.algorithm)}</p>
+                  ${!isClustering ? `
+                    ${config.dependentVariable ? `<p><strong>종속 변수:</strong> ${escapeHtml(config.dependentVariable)}</p>` : ''}
+                    ${config.independentVariables && config.independentVariables.length > 0 ? `<p><strong>독립 변수:</strong> ${config.independentVariables.map(v => escapeHtml(v)).join(', ')}</p>` : ''}
+                  ` : ''}
+                  <p><strong>훈련 데이터 비율:</strong> ${(config.trainRatio * 100).toFixed(0)}%</p>
+                  <p><strong>테스트 데이터 비율:</strong> ${((1 - config.trainRatio) * 100).toFixed(0)}%</p>
+                </div>
+                <div class="model-metrics">
+                  <h6>모델 설정</h6>
+                  <p>저장된 모델 설정이 복원되었습니다.</p>
+                </div>
+              </div>
+            `;
+            resultsDiv.innerHTML = resultHTML;
+            resultsDiv.style.display = 'block';
+          }
+        }, 300);
+      }
     }
   }
 
@@ -3684,6 +4469,412 @@ function generateColors(count) {
     result.push(colors[i % colors.length]);
   }
   return result;
+}
+
+// 속성 선택 리스트 초기화
+function initializeFeatureSelection(columns) {
+  const featureSelectionList = document.getElementById('featureSelectionList');
+  if (!featureSelectionList || !columns) return;
+
+  // 저장된 선택 상태가 있으면 복원, 없으면 처음 5개 선택
+  const savedFeatures = window.selectedFeatures || [];
+  const defaultSelected = savedFeatures.length > 0 ? savedFeatures : columns.slice(0, 5);
+
+  let html = '<div class="feature-checkboxes">';
+  columns.forEach((col) => {
+    const isChecked = defaultSelected.includes(col);
+    html += `
+      <label class="feature-checkbox-label">
+        <input type="checkbox" class="feature-checkbox" data-column="${escapeHtml(col)}" ${isChecked ? 'checked' : ''}>
+        <span>${escapeHtml(col)}</span>
+      </label>
+    `;
+  });
+  html += '</div>';
+
+  featureSelectionList.innerHTML = html;
+
+  // 선택 상태 업데이트
+  updateSelectedFeatures();
+
+  // 체크박스 변경 이벤트 리스너 추가
+  const checkboxes = featureSelectionList.querySelectorAll('.feature-checkbox');
+  checkboxes.forEach(checkbox => {
+    checkbox.addEventListener('change', () => {
+      updateSelectedFeatures();
+      updateSaveButtonColor();
+    });
+  });
+}
+
+// 선택된 속성 업데이트
+function updateSelectedFeatures() {
+  const selectedColumns = Array.from(document.querySelectorAll('.feature-checkbox:checked'))
+    .map(cb => cb.getAttribute('data-column'));
+  window.selectedFeatures = selectedColumns;
+}
+
+// Pairplot 생성
+function handleGeneratePairplot() {
+  if (!window.currentData || !window.currentColumns) {
+    alert('먼저 데이터를 업로드해주세요.');
+    return;
+  }
+
+  const selectedColumns = Array.from(document.querySelectorAll('.feature-checkbox:checked'))
+    .map(cb => cb.getAttribute('data-column'));
+
+  if (selectedColumns.length < 2) {
+    alert('최소 2개 이상의 속성을 선택해주세요.');
+    return;
+  }
+
+  const pairplotContainer = document.getElementById('pairplotContainer');
+  if (!pairplotContainer) return;
+
+  // 기존 pairplot 제거
+  pairplotContainer.innerHTML = '';
+  pairplotContainer.style.display = 'block';
+
+  const data = window.currentData;
+  const n = selectedColumns.length;
+  const cellSize = 150; // 각 셀의 크기
+  const padding = 20;
+  const labelWidth = 80; // Y축 레이블을 위한 공간
+  const labelHeight = 30; // X축 레이블을 위한 공간
+  const plotSize = n * cellSize + (n + 1) * padding;
+  const totalWidth = labelWidth + plotSize;
+  const totalHeight = plotSize + labelHeight;
+
+  // 전체 컨테이너 생성
+  const wrapper = document.createElement('div');
+  wrapper.className = 'pairplot-wrapper';
+  wrapper.style.width = `${totalWidth}px`;
+  wrapper.style.height = `${totalHeight}px`;
+  wrapper.style.position = 'relative';
+
+  // 각 셀에 대한 산점도 생성
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      const cell = document.createElement('div');
+      cell.className = 'pairplot-cell';
+      cell.style.position = 'absolute';
+      cell.style.left = `${labelWidth + j * cellSize + (j + 1) * padding}px`;
+      cell.style.top = `${i * cellSize + (i + 1) * padding}px`;
+      cell.style.width = `${cellSize}px`;
+      cell.style.height = `${cellSize}px`;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = cellSize;
+      canvas.height = cellSize;
+      cell.appendChild(canvas);
+
+      // 대각선: 히스토그램
+      if (i === j) {
+        drawHistogram(canvas, data, selectedColumns[i]);
+      } else {
+        // 비대각선: 산점도
+        drawScatterPlot(canvas, data, selectedColumns[j], selectedColumns[i]);
+      }
+
+      // X축 레이블 (첫 번째 행에만)
+      if (i === 0) {
+        const xLabel = document.createElement('div');
+        xLabel.className = 'pairplot-label pairplot-x-label';
+        xLabel.textContent = selectedColumns[j];
+        xLabel.style.position = 'absolute';
+        xLabel.style.left = `${labelWidth + j * cellSize + (j + 1) * padding}px`;
+        xLabel.style.top = `${plotSize + padding}px`;
+        xLabel.style.width = `${cellSize}px`;
+        xLabel.style.textAlign = 'center';
+        xLabel.style.fontSize = '12px';
+        xLabel.style.color = '#1d1d1f';
+        wrapper.appendChild(xLabel);
+      }
+
+      // Y축 레이블 (첫 번째 열에만)
+      if (j === 0) {
+        const yLabel = document.createElement('div');
+        yLabel.className = 'pairplot-label pairplot-y-label';
+        yLabel.textContent = selectedColumns[i];
+        yLabel.style.position = 'absolute';
+        yLabel.style.left = '0';
+        yLabel.style.top = `${i * cellSize + (i + 1) * padding}px`;
+        yLabel.style.width = `${labelWidth}px`;
+        yLabel.style.height = `${cellSize}px`;
+        yLabel.style.display = 'flex';
+        yLabel.style.alignItems = 'center';
+        yLabel.style.justifyContent = 'center';
+        yLabel.style.fontSize = '12px';
+        yLabel.style.color = '#1d1d1f';
+        yLabel.style.transform = 'none';
+        yLabel.style.textAlign = 'right';
+        yLabel.style.paddingRight = '10px';
+        wrapper.appendChild(yLabel);
+      }
+
+      wrapper.appendChild(cell);
+    }
+  }
+
+  pairplotContainer.appendChild(wrapper);
+
+  // 상태 저장
+  if (!window.featureExtractionState) {
+    window.featureExtractionState = {};
+  }
+  window.featureExtractionState.pairplotGenerated = true;
+  updateSaveButtonColor();
+}
+
+// 히스토그램 그리기 (대각선용)
+function drawHistogram(canvas, data, column) {
+  const ctx = canvas.getContext('2d');
+  const values = data.map(row => parseFloat(row[column])).filter(v => !isNaN(v));
+  
+  if (values.length === 0) return;
+
+  const bins = calculateHistogramBins(values, 10);
+  const maxCount = Math.max(...bins.counts);
+  const width = canvas.width;
+  const height = canvas.height;
+  const padding = 10;
+  const plotWidth = width - 2 * padding;
+  const plotHeight = height - 2 * padding;
+  const barWidth = plotWidth / bins.counts.length;
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = '#667eea';
+  
+  bins.counts.forEach((count, i) => {
+    const barHeight = (count / maxCount) * plotHeight;
+    const x = padding + i * barWidth;
+    const y = height - padding - barHeight;
+    ctx.fillRect(x, y, barWidth - 1, barHeight);
+  });
+}
+
+// 산점도 그리기
+function drawScatterPlot(canvas, data, xColumn, yColumn) {
+  const ctx = canvas.getContext('2d');
+  const xValues = data.map(row => parseFloat(row[xColumn])).filter(v => !isNaN(v));
+  const yValues = data.map(row => parseFloat(row[yColumn])).filter(v => !isNaN(v));
+  
+  if (xValues.length === 0 || yValues.length === 0) return;
+
+  // x와 y의 인덱스가 같은 데이터만 사용
+  const points = [];
+  data.forEach(row => {
+    const x = parseFloat(row[xColumn]);
+    const y = parseFloat(row[yColumn]);
+    if (!isNaN(x) && !isNaN(y)) {
+      points.push({ x, y });
+    }
+  });
+
+  if (points.length === 0) return;
+
+  const xMin = Math.min(...points.map(p => p.x));
+  const xMax = Math.max(...points.map(p => p.x));
+  const yMin = Math.min(...points.map(p => p.y));
+  const yMax = Math.max(...points.map(p => p.y));
+  
+  const xRange = xMax - xMin || 1;
+  const yRange = yMax - yMin || 1;
+
+  const width = canvas.width;
+  const height = canvas.height;
+  const padding = 10;
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = '#667eea';
+  ctx.strokeStyle = '#667eea';
+
+  points.forEach(point => {
+    const x = padding + ((point.x - xMin) / xRange) * (width - 2 * padding);
+    const y = height - padding - ((point.y - yMin) / yRange) * (height - 2 * padding);
+    ctx.beginPath();
+    ctx.arc(x, y, 2, 0, 2 * Math.PI);
+    ctx.fill();
+  });
+}
+
+// 히트맵 생성
+function handleGenerateHeatmap() {
+  if (!window.currentData || !window.currentColumns) {
+    alert('먼저 데이터를 업로드해주세요.');
+    return;
+  }
+
+  const selectedColumns = Array.from(document.querySelectorAll('.feature-checkbox:checked'))
+    .map(cb => cb.getAttribute('data-column'));
+
+  if (selectedColumns.length < 2) {
+    alert('최소 2개 이상의 속성을 선택해주세요.');
+    return;
+  }
+
+  const heatmapContainer = document.getElementById('heatmapContainer');
+  if (!heatmapContainer) return;
+
+  // 기존 히트맵 제거
+  heatmapContainer.innerHTML = '';
+  heatmapContainer.style.display = 'block';
+
+  const data = window.currentData;
+  const n = selectedColumns.length;
+  const cellSize = 50;
+  const labelWidth = 120;
+  const labelHeight = 80; // X축 레이블을 위한 공간 증가
+  const totalWidth = labelWidth + n * cellSize;
+  const totalHeight = labelHeight + n * cellSize;
+
+  // 상관계수 계산
+  const correlationMatrix = [];
+  for (let i = 0; i < n; i++) {
+    correlationMatrix[i] = [];
+    for (let j = 0; j < n; j++) {
+      const col1 = selectedColumns[i];
+      const col2 = selectedColumns[j];
+      const values1 = data.map(row => parseFloat(row[col1])).filter(v => !isNaN(v));
+      const values2 = data.map(row => parseFloat(row[col2])).filter(v => !isNaN(v));
+      
+      // 같은 인덱스의 값들만 사용
+      const pairs = [];
+      data.forEach(row => {
+        const v1 = parseFloat(row[col1]);
+        const v2 = parseFloat(row[col2]);
+        if (!isNaN(v1) && !isNaN(v2)) {
+          pairs.push({ x: v1, y: v2 });
+        }
+      });
+
+      if (pairs.length < 2) {
+        correlationMatrix[i][j] = 0;
+      } else {
+        correlationMatrix[i][j] = calculateCorrelation(pairs);
+      }
+    }
+  }
+
+  // 전체 컨테이너 생성
+  const wrapper = document.createElement('div');
+  wrapper.className = 'heatmap-wrapper';
+  wrapper.style.width = `${totalWidth}px`;
+  wrapper.style.height = `${totalHeight}px`;
+  wrapper.style.position = 'relative';
+
+  const canvas = document.createElement('canvas');
+  canvas.width = totalWidth;
+  canvas.height = totalHeight;
+  wrapper.appendChild(canvas);
+
+  const ctx = canvas.getContext('2d');
+
+  // 히트맵 그리기
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      const corr = correlationMatrix[i][j];
+      const x = labelWidth + j * cellSize;
+      const y = labelHeight + i * cellSize;
+
+      // 색상 계산 (-1 ~ 1을 색상으로 변환)
+      const color = getCorrelationColor(corr);
+      ctx.fillStyle = color;
+      ctx.fillRect(x, y, cellSize, cellSize);
+
+      // 상관계수 텍스트
+      ctx.fillStyle = Math.abs(corr) > 0.5 ? '#ffffff' : '#000000';
+      ctx.font = '12px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(corr.toFixed(2), x + cellSize / 2, y + cellSize / 2);
+    }
+
+    // Y축 레이블 (왼쪽, HTML로 표시)
+    const yLabel = document.createElement('div');
+    yLabel.className = 'heatmap-y-label';
+    yLabel.textContent = selectedColumns[i];
+    yLabel.style.position = 'absolute';
+    yLabel.style.left = '0';
+    yLabel.style.top = `${labelHeight + i * cellSize}px`;
+    yLabel.style.width = `${labelWidth - 10}px`;
+    yLabel.style.height = `${cellSize}px`;
+    yLabel.style.display = 'flex';
+    yLabel.style.alignItems = 'center';
+    yLabel.style.justifyContent = 'flex-end';
+    yLabel.style.fontSize = '12px';
+    yLabel.style.color = '#000000';
+    yLabel.style.paddingRight = '10px';
+    wrapper.appendChild(yLabel);
+  }
+
+  // X축 레이블 (아래쪽, HTML로 표시, 회전 없이)
+  for (let j = 0; j < n; j++) {
+    const xLabel = document.createElement('div');
+    xLabel.className = 'heatmap-x-label';
+    xLabel.textContent = selectedColumns[j];
+    xLabel.style.position = 'absolute';
+    xLabel.style.left = `${labelWidth + j * cellSize}px`;
+    xLabel.style.top = '0';
+    xLabel.style.width = `${cellSize}px`;
+    xLabel.style.height = `${labelHeight - 10}px`;
+    xLabel.style.display = 'flex';
+    xLabel.style.alignItems = 'flex-end';
+    xLabel.style.justifyContent = 'center';
+    xLabel.style.fontSize = '12px';
+    xLabel.style.color = '#000000';
+    xLabel.style.paddingBottom = '5px';
+    xLabel.style.textAlign = 'center';
+    xLabel.style.wordBreak = 'break-word';
+    xLabel.style.overflow = 'hidden';
+    wrapper.appendChild(xLabel);
+  }
+
+  heatmapContainer.appendChild(wrapper);
+
+  // 상태 저장
+  if (!window.featureExtractionState) {
+    window.featureExtractionState = {};
+  }
+  window.featureExtractionState.heatmapGenerated = true;
+  updateSaveButtonColor();
+}
+
+// 상관계수 계산
+function calculateCorrelation(pairs) {
+  if (pairs.length < 2) return 0;
+
+  const n = pairs.length;
+  const sumX = pairs.reduce((sum, p) => sum + p.x, 0);
+  const sumY = pairs.reduce((sum, p) => sum + p.y, 0);
+  const sumXY = pairs.reduce((sum, p) => sum + p.x * p.y, 0);
+  const sumX2 = pairs.reduce((sum, p) => sum + p.x * p.x, 0);
+  const sumY2 = pairs.reduce((sum, p) => sum + p.y * p.y, 0);
+
+  const numerator = n * sumXY - sumX * sumY;
+  const denominator = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+
+  if (denominator === 0) return 0;
+  return numerator / denominator;
+}
+
+// 상관계수에 따른 색상 계산
+function getCorrelationColor(corr) {
+  // -1 (파란색) ~ 0 (흰색) ~ 1 (빨간색)
+  if (corr >= 0) {
+    // 0 ~ 1: 흰색에서 빨간색으로
+    const r = Math.floor(255);
+    const g = Math.floor(255 * (1 - corr));
+    const b = Math.floor(255 * (1 - corr));
+    return `rgb(${r}, ${g}, ${b})`;
+  } else {
+    // -1 ~ 0: 파란색에서 흰색으로
+    const r = Math.floor(255 * (1 + corr));
+    const g = Math.floor(255 * (1 + corr));
+    const b = Math.floor(255);
+    return `rgb(${r}, ${g}, ${b})`;
+  }
 }
 
 // 인증 상태 확인 및 프로젝트 로드
