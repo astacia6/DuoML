@@ -1,7 +1,7 @@
 // 로그인 페이지 기능 관리
 import './style.css';
 import { auth, googleProvider } from './firebaseConfig.js';
-import { signInWithPopup, onAuthStateChanged } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged } from 'firebase/auth';
 
 // 로그인 페이지 HTML 렌더링
 function renderLoginPage() {
@@ -68,14 +68,24 @@ async function handleGoogleLogin() {
       errorMessage.style.display = 'none';
     }
 
-    // Google 로그인 팝업 실행
-    const result = await signInWithPopup(auth, googleProvider);
-    const user = result.user;
-
-    console.log('로그인 성공:', user.email);
-    
-    // 로그인 성공 시 프로젝트 목록 페이지로 이동
-    window.location.href = 'projectList.html';
+    // 팝업 방식 시도, 실패 시 리다이렉트 방식 사용
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+      console.log('로그인 성공 (팝업):', user.email);
+      
+      // 로그인 성공 시 프로젝트 목록 페이지로 이동
+      window.location.href = 'projectList.html';
+    } catch (popupError) {
+      // 팝업이 차단되었거나 실패한 경우 리다이렉트 방식 사용
+      if (popupError.code === 'auth/popup-blocked' || popupError.code === 'auth/popup-closed-by-user') {
+        console.log('팝업이 차단되었습니다. 리다이렉트 방식으로 전환합니다.');
+        await signInWithRedirect(auth, googleProvider);
+        // 리다이렉트가 시작되면 함수가 여기서 종료됨
+        return;
+      }
+      throw popupError; // 다른 오류는 다시 던짐
+    }
     
   } catch (error) {
     console.error('로그인 오류:', error);
@@ -88,6 +98,8 @@ async function handleGoogleLogin() {
       // 쿠키/도메인 관련 오류인 경우 안내 메시지 추가
       if (error.code === 'auth/unauthorized-domain' || error.message.includes('domain')) {
         errorText += '\n\nFirebase Console에서 Netlify 도메인을 인증된 도메인으로 추가해주세요.';
+      } else if (error.code === 'auth/popup-blocked') {
+        errorText += '\n\n팝업이 차단되었습니다. 브라우저 설정에서 팝업을 허용해주세요.';
       }
       
       errorMessage.textContent = errorText;
@@ -115,13 +127,32 @@ async function handleGoogleLogin() {
   }
 }
 
+// 리다이렉트 결과 확인 (리다이렉트 방식 로그인 후)
+getRedirectResult(auth)
+  .then((result) => {
+    if (result) {
+      console.log('리다이렉트 로그인 성공:', result.user.email);
+      // 리다이렉트 로그인 성공 시 프로젝트 목록으로 이동
+      window.location.href = 'projectList.html';
+    }
+  })
+  .catch((error) => {
+    console.error('리다이렉트 로그인 오류:', error);
+  });
+
 // 인증 상태 확인 - 이미 로그인되어 있으면 프로젝트 목록으로 이동
 onAuthStateChanged(auth, (user) => {
   if (user) {
-    // 로그인된 사용자는 프로젝트 목록으로 리다이렉트
-    window.location.href = 'projectList.html';
+    // 현재 페이지가 index.html이고 로그인된 경우에만 리다이렉트
+    // (projectList.html에서도 이 코드가 실행되므로 무한 리다이렉트 방지)
+    if (window.location.pathname === '/' || window.location.pathname.endsWith('index.html')) {
+      window.location.href = 'projectList.html';
+    }
   } else {
     // 로그인되지 않은 사용자는 로그인 페이지 표시
-    renderLoginPage();
+    // projectList.html이 아닌 경우에만 렌더링
+    if (window.location.pathname === '/' || window.location.pathname.endsWith('index.html')) {
+      renderLoginPage();
+    }
   }
 });
