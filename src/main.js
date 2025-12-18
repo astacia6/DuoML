@@ -83,7 +83,14 @@ async function handleGoogleLogin() {
     // 에러 메시지 표시
     const errorMessage = document.getElementById('errorMessage');
     if (errorMessage) {
-      errorMessage.textContent = `로그인 실패: ${error.message}`;
+      let errorText = `로그인 실패: ${error.message}`;
+      
+      // 쿠키/도메인 관련 오류인 경우 안내 메시지 추가
+      if (error.code === 'auth/unauthorized-domain' || error.message.includes('domain')) {
+        errorText += '\n\nFirebase Console에서 Netlify 도메인을 인증된 도메인으로 추가해주세요.';
+      }
+      
+      errorMessage.textContent = errorText;
       errorMessage.style.display = 'block';
     }
     

@@ -35,11 +35,25 @@ OPENAI_MODEL=gpt-4.1-mini (선택, 기본값: gpt-4.1-mini)
 4. "일반" 탭에서 "내 앱" 섹션의 웹 앱 설정 확인
 5. `firebaseConfig` 객체에서 필요한 값들을 복사
 
+## Firebase 인증 도메인 설정 (중요!)
+
+쿠키 오류를 방지하려면 Firebase Console에서 Netlify 도메인을 추가해야 합니다:
+
+1. [Firebase Console](https://console.firebase.google.com/) 접속
+2. 프로젝트 선택
+3. **Authentication** → **Settings** → **Authorized domains** 이동
+4. **Add domain** 클릭
+5. Netlify 도메인 추가:
+   - `duoml.netlify.app` (기본 Netlify 도메인)
+   - `your-custom-domain.com` (커스텀 도메인 사용 시)
+6. 저장
+
 ## 배포 후 확인
 
 1. 환경 변수 설정 후 **새로 빌드** 필요 (자동 재배포 또는 수동 재배포)
-2. 브라우저 콘솔에서 Firebase 오류가 사라졌는지 확인
-3. 로그인 기능이 정상 작동하는지 확인
+2. Firebase 인증 도메인에 Netlify 도메인 추가 확인
+3. 브라우저 콘솔에서 Firebase 오류가 사라졌는지 확인
+4. 로그인 기능이 정상 작동하는지 확인
 
 ## 주의사항
 

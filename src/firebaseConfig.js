@@ -46,6 +46,11 @@ const db = getFirestore(app);
 const storage = getStorage(app);
 const googleProvider = new GoogleAuthProvider();
 
+// Google 로그인 설정 - 쿠키 문제 해결
+googleProvider.setCustomParameters({
+  prompt: 'select_account'
+});
+
 // Analytics는 브라우저 환경에서만 초기화
 let analytics = null;
 if (typeof window !== 'undefined') {
