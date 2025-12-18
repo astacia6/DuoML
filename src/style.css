@@ -2561,6 +2561,26 @@ body {
   color: #666;
 }
 
+.model-evaluation-results {
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  background: white;
+  border: 1px solid #e5e5e7;
+  border-radius: 12px;
+}
+
+.model-evaluation-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.model-evaluation-content p {
+  margin: 0.5rem 0;
+  font-size: 1rem;
+  color: #1d1d1f;
+}
+
 .regression-equation {
   font-family: 'Courier New', monospace;
   font-size: 1.1rem;
@@ -2621,6 +2641,81 @@ body {
 
 .regression-chart-note strong {
   font-weight: 600;
+}
+
+/* 혼동행렬 스타일 */
+.confusion-matrix-container {
+  margin: 1rem 0;
+  padding: 1rem;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px solid #e5e5e7;
+}
+
+.confusion-matrix-container h6 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1d1d1f;
+  margin: 0 0 1rem 0;
+}
+
+.confusion-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.confusion-matrix th,
+.confusion-matrix td {
+  padding: 0.75rem;
+  text-align: center;
+  border: 1px solid #e5e5e7;
+}
+
+.confusion-matrix thead th {
+  background: #667eea;
+  color: white;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.confusion-matrix tbody th {
+  background: #f0f4ff;
+  color: #667eea;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.confusion-matrix tbody td {
+  font-weight: 500;
+  font-size: 1rem;
+}
+
+.confusion-matrix tbody td.correct {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.confusion-matrix tbody td.incorrect {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.classification-metrics {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e5e5e7;
+}
+
+.classification-metrics p {
+  margin: 0.5rem 0;
+  font-size: 1rem;
+  color: #1d1d1f;
 }
 
 .no-numeric-warning {

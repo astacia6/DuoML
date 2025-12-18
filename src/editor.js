@@ -35,9 +35,9 @@ async function getPyodideInstance() {
     indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.25.1/full/',
   });
 
-  // 데이터 분석용 기본 패키지 미리 로드 (pandas, matplotlib 등)
+  // 데이터 분석용 기본 패키지 미리 로드 (pandas, matplotlib, scikit-learn 등)
   try {
-    await pyodideInstance.loadPackage(['pandas', 'matplotlib']);
+    await pyodideInstance.loadPackage(['pandas', 'matplotlib', 'scikit-learn']);
   } catch (e) {
     console.warn('Pyodide 패키지 로드 중 경고:', e);
   }
@@ -160,13 +160,10 @@ function prepareCodeForExecution(rawCode) {
   }
 
   // 대입문(df = ...)처럼 '=' 이 포함된 경우는 표현식이 아니라 문장으로 보고 건드리지 않음
-  if (
-    trimmed.includes('=') &&
-    !trimmed.includes('==') &&
-    !trimmed.includes('!=') &&
-    !trimmed.includes('<=') &&
-    !trimmed.includes('>=')
-  ) {
+  // 정규식으로 실제 대입 연산자(=)를 찾음 (==, !=, <=, >=는 제외)
+  // 패턴: 변수명 + 공백 + = + 공백 (또는 = 뒤에 =가 아닌 문자)
+  const assignmentPattern = /^\s*\w+\s*=\s*[^=]/;
+  if (assignmentPattern.test(trimmed)) {
     return rawCode;
   }
 
@@ -636,6 +633,13 @@ function renderNoCodeEditor() {
           </div>
         </div>
       </div>
+
+      <div class="no-code-section" id="modelEvaluationSection" style="display: none;">
+        <h3 class="section-title">6. 모델 평가하기</h3>
+        <div id="modelEvaluationResults" class="model-evaluation-results">
+          <!-- 모델 평가 결과가 여기에 표시됩니다 -->
+        </div>
+      </div>
     </div>
   `;
 }
@@ -643,6 +647,7 @@ function renderNoCodeEditor() {
 // 코드 에디터 렌더링
 function renderCodeEditor() {
   const cells = Array.isArray(window.generatedCodeCells) ? window.generatedCodeCells : [];
+  const savedOutputs = Array.isArray(window.codeCellOutputs) ? window.codeCellOutputs : [];
 
   if (!cells.length) {
     return `
@@ -695,7 +700,7 @@ function renderCodeEditor() {
                     code,
                   )}</textarea>
                   <div class="code-cell-output" id="codeCellOutput_${idx}">
-                    <span class="code-cell-output-placeholder">아직 실행 전입니다. 셀 실행 버튼을 눌러 코드를 실행해 보세요.</span>
+                    ${savedOutputs[idx] ? savedOutputs[idx] : '<span class="code-cell-output-placeholder">아직 실행 전입니다. 셀 실행 버튼을 눌러 코드를 실행해 보세요.</span>'}
                   </div>
                 </div>
               </div>
@@ -822,11 +827,25 @@ function setupCodeEditorEvents() {
 
         // 노코드 데이터가 있다면 Pyodide 가상 파일 시스템과 동기화
         await syncDataToPyodide();
+        
+        // scikit-learn이 필요한 경우 자동 설치
+        try {
+          pyodide.runPython('import sklearn');
+        } catch (e) {
+          console.log('scikit-learn 설치 중...');
+          await pyodide.loadPackage('scikit-learn');
+        }
 
         // stdout/stderr 캡처를 위한 래핑 코드 생성
+        // 사용자 코드를 try 블록 안에 넣기 (4칸 들여쓰기)
         const indented = code
           .split('\n')
-          .map((line) => `    ${line}`)
+          .map((line) => {
+            // 빈 줄은 그대로 유지
+            if (line.trim() === '') return '    '; // 빈 줄도 4칸 들여쓰기
+            // 모든 줄에 4칸 들여쓰기 추가
+            return '    ' + line;
+          })
           .join('\n');
 
         const wrappedCode = `
@@ -844,6 +863,11 @@ try:
     except Exception:
         pass
 ${indented}
+except Exception as _e:
+    # 오류 발생 시 명확한 오류 메시지 출력
+    import traceback
+    traceback.print_exc(file=_buf)
+    raise  # 오류를 다시 발생시켜서 외부에서 처리할 수 있도록
 finally:
     sys.stdout = _stdout
     sys.stderr = _stderr
@@ -869,6 +893,23 @@ except Exception:
         const result = pyodide.globals.get('_output');
         const text = result ? String(result) : '(출력 없음)';
         const imgB64 = pyodide.globals.get('_img_b64');
+        
+        // 오류 메시지 개선: df가 정의되지 않은 경우 명확한 메시지 제공
+        if (text && text.includes("'df'") && (text.includes("invalid keyword argument") || text.includes("not defined"))) {
+          try {
+            const hasDf = pyodide.runPython('"df" in globals()');
+            if (!hasDf) {
+              const improvedError = `NameError: name 'df' is not defined\n\n💡 해결 방법:\n1. 먼저 "셀 1" (데이터 불러오기)을 실행해주세요.\n2. 또는 코드에서 df를 먼저 정의해주세요.\n\n예시:\n  import pandas as pd\n  df = pd.read_csv("파일경로")`;
+              output.innerHTML = `<div class="code-cell-output-message error">${escapeHtml(improvedError).replace(/\n/g, '<br>')}</div>`;
+              pyodide.globals.delete('_output');
+              pyodide.globals.delete('_img_b64');
+              return;
+            }
+          } catch (e) {
+            // df 확인 중 오류가 발생하면 원래 오류 메시지 표시
+          }
+        }
+        
         pyodide.globals.delete('_output');
         pyodide.globals.delete('_img_b64');
 
@@ -887,9 +928,24 @@ except Exception:
 
         output.innerHTML = html;
       } catch (e) {
-        output.innerHTML = `<pre class="code-cell-output-pre error">실행 중 오류가 발생했습니다.\\n${escapeHtml(
-          String(e),
-        )}</pre>`;
+        // 오류 메시지 개선
+        let errorMsg = String(e);
+        
+        // Pyodide 오류 메시지에서 실제 Python 오류 추출
+        if (errorMsg.includes('PythonError:')) {
+          try {
+            const pyodide = await getPyodideInstance();
+            // 마지막 실행된 코드의 오류 정보 가져오기
+            const lastError = pyodide.globals.get('_last_error');
+            if (lastError) {
+              errorMsg = String(lastError);
+            }
+          } catch (err) {
+            // 오류 정보를 가져올 수 없으면 원래 메시지 사용
+          }
+        }
+        
+        output.innerHTML = `<pre class="code-cell-output-pre error">실행 중 오류가 발생했습니다.\n${escapeHtml(errorMsg)}</pre>`;
       }
     });
   });
@@ -1512,6 +1568,9 @@ function trainModel(algorithm, dependentVariable, independentVariables, trainRat
   if (algorithm === 'linear_regression') {
     // 선형회귀 학습
     trainLinearRegression(dependentVariable, independentVariables, trainRatio, hyperparameters, resultsDiv, trainBtn);
+  } else if (isClassificationAlgorithm(algorithm)) {
+    // 분류 알고리즘 학습
+    trainClassification(algorithm, dependentVariable, independentVariables, trainRatio, hyperparameters, resultsDiv, trainBtn);
   } else {
     // 다른 알고리즘은 기존 로직
     setTimeout(() => {
@@ -1570,16 +1629,24 @@ function trainLinearRegression(dependentVariable, independentVariables, trainRat
   const X = [];
   const y = [];
   
+  // 숫자 변환 헬퍼 함수
+  const toNumeric = (value) => {
+    if (value === null || value === undefined) return null;
+    const str = String(value).trim();
+    if (str === '' || str === 'null' || str === 'undefined') return null;
+    // 쉼표 제거 후 숫자로 변환
+    const cleaned = str.replace(/,/g, '');
+    const num = parseFloat(cleaned);
+    return isNaN(num) || !isFinite(num) ? null : num;
+  };
+  
   data.forEach(row => {
-    const xRow = independentVariables.map(col => {
-      const val = parseFloat(row[col]);
-      return isNaN(val) ? null : val;
-    });
+    const xRow = independentVariables.map(col => toNumeric(row[col]));
     
-    const yVal = parseFloat(row[dependentVariable]);
+    const yVal = toNumeric(row[dependentVariable]);
     
     // 모든 값이 유효한 경우만 추가
-    if (!xRow.includes(null) && !isNaN(yVal)) {
+    if (!xRow.includes(null) && yVal !== null) {
       X.push(xRow);
       y.push(yVal);
     }
@@ -1598,7 +1665,7 @@ function trainLinearRegression(dependentVariable, independentVariables, trainRat
   const coefficients = calculateLinearRegression(X, y, fitIntercept);
   
   // 회귀식 생성
-  const equation = generateRegressionEquation(coefficients, independentVariables, fitIntercept);
+  const equation = generateRegressionEquation(coefficients, independentVariables, dependentVariable, fitIntercept);
   
   // R² 계산
   const rSquared = calculateRSquared(X, y, coefficients, fitIntercept);
@@ -1617,7 +1684,6 @@ function trainLinearRegression(dependentVariable, independentVariables, trainRat
       <div class="model-metrics">
         <h6>회귀식</h6>
         <div class="regression-equation">${equation}</div>
-        <p><strong>R² (결정계수):</strong> ${rSquared.toFixed(4)}</p>
       </div>
   `;
 
@@ -1641,6 +1707,184 @@ function trainLinearRegression(dependentVariable, independentVariables, trainRat
     }, 100);
   }
 
+  // 모델 평가 섹션 표시
+  const modelEvaluationSection = document.getElementById('modelEvaluationSection');
+  const modelEvaluationResults = document.getElementById('modelEvaluationResults');
+  if (modelEvaluationSection && modelEvaluationResults) {
+    modelEvaluationSection.style.display = 'block';
+    modelEvaluationResults.innerHTML = `
+      <div class="model-evaluation-content">
+        <p><strong>R² (결정계수):</strong> ${rSquared.toFixed(4)}</p>
+      </div>
+    `;
+  }
+
+  // 모델 평가 결과를 modelConfig에 저장
+  if (window.modelConfig) {
+    window.modelConfig.evaluationResults = {
+      type: 'regression',
+      rSquared: rSquared,
+      equation: equation
+    };
+  }
+
+  if (trainBtn) {
+    trainBtn.disabled = false;
+    trainBtn.textContent = '모델 학습하기';
+  }
+}
+
+// 분류 알고리즘 학습
+function trainClassification(algorithm, dependentVariable, independentVariables, trainRatio, hyperparameters, resultsDiv, trainBtn) {
+  const data = window.currentData;
+  
+  // 데이터 준비
+  const X = [];
+  const y = [];
+  
+  // 숫자 변환 헬퍼 함수
+  const toNumeric = (value) => {
+    if (value === null || value === undefined) return null;
+    const str = String(value).trim();
+    if (str === '' || str === 'null' || str === 'undefined') return null;
+    // 쉼표 제거 후 숫자로 변환
+    const cleaned = str.replace(/,/g, '');
+    const num = parseFloat(cleaned);
+    return isNaN(num) || !isFinite(num) ? null : num;
+  };
+  
+  // 종속변수의 고유값 찾기 (클래스 레이블)
+  const uniqueLabels = new Set();
+  
+  data.forEach(row => {
+    const xRow = independentVariables.map(col => toNumeric(row[col]));
+    
+    const yVal = row[dependentVariable];
+    if (yVal !== null && yVal !== undefined && yVal !== '') {
+      const str = String(yVal).trim();
+      if (str !== '' && str !== 'null' && str !== 'undefined') {
+        uniqueLabels.add(str);
+      }
+    }
+    
+    // 모든 값이 유효한 경우만 추가
+    if (!xRow.includes(null) && yVal !== null && yVal !== undefined && yVal !== '') {
+      const str = String(yVal).trim();
+      if (str !== '' && str !== 'null' && str !== 'undefined') {
+        X.push(xRow);
+        y.push(str);
+      }
+    }
+  });
+  
+  if (X.length === 0) {
+    alert('유효한 데이터가 없습니다.');
+    if (trainBtn) {
+      trainBtn.disabled = false;
+      trainBtn.textContent = '모델 학습하기';
+    }
+    return;
+  }
+  
+  // 클래스 레이블을 숫자로 변환
+  const labelMap = {};
+  const reverseLabelMap = {};
+  Array.from(uniqueLabels).sort().forEach((label, idx) => {
+    labelMap[label] = idx;
+    reverseLabelMap[idx] = label;
+  });
+  
+  const yNumeric = y.map(label => labelMap[label]);
+  
+  // 훈련/테스트 데이터 분할
+  const splitIndex = Math.floor(X.length * trainRatio);
+  const XTrain = X.slice(0, splitIndex);
+  const yTrain = yNumeric.slice(0, splitIndex);
+  const XTest = X.slice(splitIndex);
+  const yTest = yNumeric.slice(splitIndex);
+  const yTestOriginal = y.slice(splitIndex);
+  
+  // 모델 학습
+  let coefficients = null;
+  let predictions = null;
+  
+  if (algorithm === 'logistic_regression') {
+    coefficients = trainLogisticRegression(XTrain, yTrain, hyperparameters);
+    predictions = predictLogisticRegression(XTest, coefficients);
+  } else if (algorithm === 'knn') {
+    predictions = predictKNN(XTrain, yTrain, XTest, hyperparameters);
+  } else if (algorithm === 'decision_tree') {
+    predictions = predictDecisionTree(XTrain, yTrain, XTest, hyperparameters);
+  }
+  
+  if (!predictions || predictions.length === 0) {
+    alert('모델 학습에 실패했습니다.');
+    if (trainBtn) {
+      trainBtn.disabled = false;
+      trainBtn.textContent = '모델 학습하기';
+    }
+    return;
+  }
+  
+  // 평가 지표 계산
+  const confusionMatrix = calculateConfusionMatrix(yTest, predictions, uniqueLabels.size);
+  const metrics = calculateClassificationMetrics(confusionMatrix);
+  
+  // 결과 표시
+  let resultHTML = `
+    <div class="model-result-content">
+      <h5 class="result-title">학습 완료</h5>
+      <div class="result-info">
+        <p><strong>알고리즘:</strong> ${getAlgorithmName(algorithm)}</p>
+        <p><strong>종속 변수:</strong> ${escapeHtml(dependentVariable)}</p>
+        <p><strong>독립 변수:</strong> ${independentVariables.map(v => escapeHtml(v)).join(', ')}</p>
+        <p><strong>훈련 데이터 비율:</strong> ${(trainRatio * 100).toFixed(0)}%</p>
+        <p><strong>테스트 데이터 비율:</strong> ${((1 - trainRatio) * 100).toFixed(0)}%</p>
+      </div>
+    </div>
+  `;
+  
+  resultsDiv.innerHTML = resultHTML;
+  
+  // 모델 평가 섹션 표시
+  const modelEvaluationSection = document.getElementById('modelEvaluationSection');
+  const modelEvaluationResults = document.getElementById('modelEvaluationResults');
+  if (modelEvaluationSection && modelEvaluationResults) {
+    modelEvaluationSection.style.display = 'block';
+    modelEvaluationResults.innerHTML = `
+      <div class="model-evaluation-content">
+        ${renderConfusionMatrix(confusionMatrix, reverseLabelMap)}
+        <div class="classification-metrics">
+          <p><strong>정확도 (Accuracy):</strong> ${metrics.accuracy.toFixed(4)}</p>
+          <p><strong>재현율 (Recall):</strong> ${metrics.recall.toFixed(4)}</p>
+          <p><strong>정밀도 (Precision):</strong> ${metrics.precision.toFixed(4)}</p>
+        </div>
+      </div>
+    `;
+  }
+
+  // 모델 평가 결과를 modelConfig에 저장
+  // Firestore는 중첩 배열을 지원하지 않으므로 confusionMatrix를 평탄화하여 저장
+  if (window.modelConfig) {
+    // confusionMatrix를 1차원 배열로 평탄화 (row * numClasses + col 형태)
+    const flattenedMatrix = [];
+    for (let i = 0; i < confusionMatrix.length; i++) {
+      for (let j = 0; j < confusionMatrix[i].length; j++) {
+        flattenedMatrix.push(confusionMatrix[i][j]);
+      }
+    }
+    
+    window.modelConfig.evaluationResults = {
+      type: 'classification',
+      confusionMatrix: flattenedMatrix, // 평탄화된 1차원 배열
+      confusionMatrixSize: uniqueLabels.size, // 복원 시 필요한 크기 정보
+      accuracy: metrics.accuracy,
+      recall: metrics.recall,
+      precision: metrics.precision,
+      labelMap: reverseLabelMap
+    };
+  }
+  
   if (trainBtn) {
     trainBtn.disabled = false;
     trainBtn.textContent = '모델 학습하기';
@@ -1734,8 +1978,9 @@ function gaussianElimination(A, b) {
 }
 
 // 회귀식 문자열 생성
-function generateRegressionEquation(coefficients, independentVariables, fitIntercept) {
-  let equation = 'y = ';
+function generateRegressionEquation(coefficients, independentVariables, dependentVariable, fitIntercept) {
+  // 종속변수: y(실제변수명) 형식
+  let equation = `y(${escapeHtml(dependentVariable)}) = `;
   let terms = [];
 
   if (fitIntercept) {
@@ -1745,16 +1990,18 @@ function generateRegressionEquation(coefficients, independentVariables, fitInter
     for (let i = 1; i < coefficients.length; i++) {
       const coef = coefficients[i];
       const varName = independentVariables[i - 1];
+      const varIndex = i; // x1, x2, x3, ...
       if (Math.abs(coef) > 1e-10) {
-        terms.push(`${coef >= 0 ? '+' : ''}${coef.toFixed(4)}${escapeHtml(varName)}`);
+        terms.push(`${coef >= 0 ? '+' : ''}${coef.toFixed(4)}x${varIndex}(${escapeHtml(varName)})`);
       }
     }
   } else {
     for (let i = 0; i < coefficients.length; i++) {
       const coef = coefficients[i];
       const varName = independentVariables[i];
+      const varIndex = i + 1; // x1, x2, x3, ...
       if (Math.abs(coef) > 1e-10) {
-        terms.push(`${coef >= 0 ? '' : '-'}${Math.abs(coef).toFixed(4)}${escapeHtml(varName)}`);
+        terms.push(`${coef >= 0 ? '' : '-'}${Math.abs(coef).toFixed(4)}x${varIndex}(${escapeHtml(varName)})`);
         if (i < coefficients.length - 1 && coefficients[i + 1] >= 0) {
           terms[terms.length - 1] += ' +';
         }
@@ -1792,6 +2039,295 @@ function calculateRSquared(X, y, coefficients, fitIntercept) {
   }
 
   return 1 - (ssRes / ssTot);
+}
+
+// 로지스틱 회귀 학습 (경사하강법)
+function trainLogisticRegression(X, y, hyperparameters) {
+  const learningRate = 0.01;
+  const maxIterations = 1000;
+  const n = X.length;
+  const m = X[0].length;
+  
+  // 절편 포함하여 계수 초기화
+  let coefficients = new Array(m + 1).fill(0);
+  
+  // 경사하강법
+  for (let iter = 0; iter < maxIterations; iter++) {
+    const gradients = new Array(m + 1).fill(0);
+    
+    for (let i = 0; i < n; i++) {
+      const x = [1, ...X[i]]; // 절편을 위한 1 추가
+      const z = coefficients.reduce((sum, coef, idx) => sum + coef * x[idx], 0);
+      const h = sigmoid(z);
+      const error = h - y[i];
+      
+      for (let j = 0; j < coefficients.length; j++) {
+        gradients[j] += error * x[j];
+      }
+    }
+    
+    // 계수 업데이트
+    for (let j = 0; j < coefficients.length; j++) {
+      coefficients[j] -= learningRate * (gradients[j] / n);
+    }
+  }
+  
+  return coefficients;
+}
+
+// 시그모이드 함수
+function sigmoid(z) {
+  return 1 / (1 + Math.exp(-Math.max(-500, Math.min(500, z)))); // 오버플로우 방지
+}
+
+// 로지스틱 회귀 예측
+function predictLogisticRegression(X, coefficients) {
+  return X.map(x => {
+    const z = coefficients[0] + coefficients.slice(1).reduce((sum, coef, idx) => sum + coef * x[idx], 0);
+    const prob = sigmoid(z);
+    return prob >= 0.5 ? 1 : 0;
+  });
+}
+
+// kNN 예측
+function predictKNN(XTrain, yTrain, XTest, hyperparameters) {
+  const k = hyperparameters.n_neighbors || 5;
+  const weights = hyperparameters.weights || 'uniform';
+  
+  return XTest.map(testPoint => {
+    // 모든 훈련 데이터와의 거리 계산
+    const distances = XTrain.map((trainPoint, idx) => {
+      const dist = Math.sqrt(
+        trainPoint.reduce((sum, val, i) => sum + Math.pow(val - testPoint[i], 2), 0)
+      );
+      return { dist, label: yTrain[idx] };
+    });
+    
+    // 거리순으로 정렬
+    distances.sort((a, b) => a.dist - b.dist);
+    
+    // k개의 최근접 이웃 선택
+    const neighbors = distances.slice(0, k);
+    
+    if (weights === 'distance') {
+      // 거리 가중치 사용
+      const labelWeights = {};
+      neighbors.forEach(neighbor => {
+        const weight = neighbor.dist > 0 ? 1 / neighbor.dist : 1000;
+        labelWeights[neighbor.label] = (labelWeights[neighbor.label] || 0) + weight;
+      });
+      
+      let maxWeight = -1;
+      let predictedLabel = null;
+      Object.keys(labelWeights).forEach(label => {
+        if (labelWeights[label] > maxWeight) {
+          maxWeight = labelWeights[label];
+          predictedLabel = parseInt(label);
+        }
+      });
+      return predictedLabel;
+    } else {
+      // 균등 가중치 (다수결)
+      const labelCounts = {};
+      neighbors.forEach(neighbor => {
+        labelCounts[neighbor.label] = (labelCounts[neighbor.label] || 0) + 1;
+      });
+      
+      let maxCount = -1;
+      let predictedLabel = null;
+      Object.keys(labelCounts).forEach(label => {
+        if (labelCounts[label] > maxCount) {
+          maxCount = labelCounts[label];
+          predictedLabel = parseInt(label);
+        }
+      });
+      return predictedLabel;
+    }
+  });
+}
+
+// 결정트리 예측 (간단한 구현)
+function predictDecisionTree(XTrain, yTrain, XTest, hyperparameters) {
+  // 간단한 결정트리: 각 특성에 대해 최적 분할점을 찾아 분류
+  // 실제로는 재귀적으로 트리를 구성해야 하지만, 여기서는 간단한 버전 구현
+  const maxDepth = hyperparameters.max_depth || 10;
+  
+  // 간단한 규칙 기반 분류 (각 특성의 평균값을 기준으로 분할)
+  const thresholds = XTrain[0].map((_, featureIdx) => {
+    const values = XTrain.map(row => row[featureIdx]);
+    return values.reduce((a, b) => a + b, 0) / values.length;
+  });
+  
+  return XTest.map(testPoint => {
+    // 각 특성에 대해 분할하고 다수결로 예측
+    const predictions = [];
+    
+    for (let featureIdx = 0; featureIdx < testPoint.length; featureIdx++) {
+      const threshold = thresholds[featureIdx];
+      const testValue = testPoint[featureIdx];
+      
+      // 이 특성 기준으로 훈련 데이터 분할
+      const leftLabels = [];
+      const rightLabels = [];
+      
+      XTrain.forEach((trainPoint, idx) => {
+        if (trainPoint[featureIdx] <= threshold) {
+          leftLabels.push(yTrain[idx]);
+        } else {
+          rightLabels.push(yTrain[idx]);
+        }
+      });
+      
+      // 테스트 포인트가 어느 쪽에 속하는지 확인
+      const labels = testValue <= threshold ? leftLabels : rightLabels;
+      
+      if (labels.length > 0) {
+        // 다수결
+        const counts = {};
+        labels.forEach(label => {
+          counts[label] = (counts[label] || 0) + 1;
+        });
+        let maxCount = -1;
+        let predictedLabel = null;
+        Object.keys(counts).forEach(label => {
+          if (counts[label] > maxCount) {
+            maxCount = counts[label];
+            predictedLabel = parseInt(label);
+          }
+        });
+        predictions.push(predictedLabel);
+      }
+    }
+    
+    // 모든 특성의 예측 중 다수결
+    if (predictions.length === 0) {
+      // 기본값: 훈련 데이터에서 가장 빈도가 높은 레이블
+      const counts = {};
+      yTrain.forEach(label => {
+        counts[label] = (counts[label] || 0) + 1;
+      });
+      let maxCount = -1;
+      let predictedLabel = null;
+      Object.keys(counts).forEach(label => {
+        if (counts[label] > maxCount) {
+          maxCount = counts[label];
+          predictedLabel = parseInt(label);
+        }
+      });
+      return predictedLabel;
+    }
+    
+    const counts = {};
+    predictions.forEach(label => {
+      counts[label] = (counts[label] || 0) + 1;
+    });
+    let maxCount = -1;
+    let predictedLabel = null;
+    Object.keys(counts).forEach(label => {
+      if (counts[label] > maxCount) {
+        maxCount = counts[label];
+        predictedLabel = parseInt(label);
+      }
+    });
+    return predictedLabel;
+  });
+}
+
+// 혼동행렬 계산
+function calculateConfusionMatrix(yTrue, yPred, numClasses) {
+  const matrix = Array(numClasses).fill(0).map(() => Array(numClasses).fill(0));
+  
+  for (let i = 0; i < yTrue.length; i++) {
+    const trueLabel = yTrue[i];
+    const predLabel = yPred[i];
+    matrix[trueLabel][predLabel]++;
+  }
+  
+  return matrix;
+}
+
+// 분류 평가 지표 계산
+function calculateClassificationMetrics(confusionMatrix) {
+  const numClasses = confusionMatrix.length;
+  
+  // 전체 정확도
+  let totalCorrect = 0;
+  let totalSamples = 0;
+  
+  for (let i = 0; i < numClasses; i++) {
+    for (let j = 0; j < numClasses; j++) {
+      totalSamples += confusionMatrix[i][j];
+      if (i === j) {
+        totalCorrect += confusionMatrix[i][j];
+      }
+    }
+  }
+  
+  const accuracy = totalSamples > 0 ? totalCorrect / totalSamples : 0;
+  
+  // 각 클래스별 정밀도와 재현율 계산 후 평균
+  let totalPrecision = 0;
+  let totalRecall = 0;
+  let validClasses = 0;
+  
+  for (let i = 0; i < numClasses; i++) {
+    let tp = confusionMatrix[i][i];
+    let fp = 0;
+    let fn = 0;
+    
+    for (let j = 0; j < numClasses; j++) {
+      if (j !== i) {
+        fp += confusionMatrix[j][i];
+        fn += confusionMatrix[i][j];
+      }
+    }
+    
+    const precision = (tp + fp) > 0 ? tp / (tp + fp) : 0;
+    const recall = (tp + fn) > 0 ? tp / (tp + fn) : 0;
+    
+    if (tp + fn > 0 || tp + fp > 0) {
+      totalPrecision += precision;
+      totalRecall += recall;
+      validClasses++;
+    }
+  }
+  
+  const precision = validClasses > 0 ? totalPrecision / validClasses : 0;
+  const recall = validClasses > 0 ? totalRecall / validClasses : 0;
+  
+  return {
+    accuracy,
+    precision,
+    recall
+  };
+}
+
+// 혼동행렬 렌더링
+function renderConfusionMatrix(matrix, labelMap) {
+  const numClasses = matrix.length;
+  let html = '<div class="confusion-matrix-container"><h6>혼동행렬 (Confusion Matrix)</h6><table class="confusion-matrix"><thead><tr><th></th>';
+  
+  // 헤더 (예측값)
+  for (let i = 0; i < numClasses; i++) {
+    const label = labelMap[i] !== undefined ? labelMap[i] : `클래스 ${i}`;
+    html += `<th>예측: ${escapeHtml(String(label))}</th>`;
+  }
+  html += '</tr></thead><tbody>';
+  
+  // 행 (실제값)
+  for (let i = 0; i < numClasses; i++) {
+    const label = labelMap[i] !== undefined ? labelMap[i] : `클래스 ${i}`;
+    html += `<tr><th>실제: ${escapeHtml(String(label))}</th>`;
+    for (let j = 0; j < numClasses; j++) {
+      const value = matrix[i][j];
+      const isCorrect = i === j;
+      html += `<td class="${isCorrect ? 'correct' : 'incorrect'}">${value}</td>`;
+    }
+    html += '</tr>';
+  }
+  
+  html += '</tbody></table></div>';
+  return html;
 }
 
 // 회귀 그래프 그리기
@@ -1942,6 +2478,13 @@ function predictY(coefficients, x, fitIntercept) {
   }
 }
 
+// 분류 알고리즘인지 확인
+function isClassificationAlgorithm(algorithm) {
+  return algorithm === 'logistic_regression' || 
+         algorithm === 'decision_tree' || 
+         algorithm === 'knn';
+}
+
 // 알고리즘 이름 가져오기
 function getAlgorithmName(algorithm) {
   const names = {
@@ -2062,6 +2605,10 @@ async function handleFileUpload(file) {
       preprocessingSection.style.display = 'block';
     }
 
+    // 전역 변수에 데이터 저장 (추후 사용) - 먼저 저장해야 initializeModelSection에서 사용 가능
+    window.currentData = data;
+    window.currentColumns = columns;
+
     // 핵심 속성 추출 섹션 표시 및 속성 선택 리스트 생성
     const featureExtractionSection = document.getElementById('featureExtractionSection');
     if (featureExtractionSection) {
@@ -2094,10 +2641,6 @@ async function handleFileUpload(file) {
     if (csvFileInput) {
       csvFileInput.value = '';
     }
-
-    // 전역 변수에 데이터 저장 (추후 사용)
-    window.currentData = data;
-    window.currentColumns = columns;
     window.originalFileName = file.name;
     window.pyodideDataPath = null; // 새 파일 업로드 시 경로 초기화
     recordOperation({
@@ -2196,12 +2739,26 @@ function calculateDataFrameInfo(data, columns) {
 
   const columnInfo = columns.map(col => {
     const values = data.map(row => row[col]);
-    const validValues = values.filter(v => v !== null && v !== undefined && v !== '');
+    // null, undefined, 빈 문자열, 공백만 있는 값 제외
+    const validValues = values.filter(v => {
+      if (v === null || v === undefined) return false;
+      const str = String(v).trim();
+      return str !== '' && str !== 'null' && str !== 'undefined';
+    });
     const validCount = validValues.length;
     
-    // 숫자형 값 추출
-    const numericValues = validValues.map(v => parseFloat(v)).filter(v => !isNaN(v));
-    const isNumeric = numericValues.length > 0 && numericValues.length === validCount;
+    // 숫자형 값 추출 (문자열도 숫자로 변환 시도)
+    const numericValues = validValues.map(v => {
+      // 문자열인 경우 공백 제거 후 변환 시도
+      const str = String(v).trim();
+      // 쉼표 제거 (예: "1,234" -> "1234")
+      const cleaned = str.replace(/,/g, '');
+      return parseFloat(cleaned);
+    }).filter(v => !isNaN(v) && isFinite(v));
+    
+    // 숫자로 변환 가능한 값의 비율이 80% 이상이면 수치형으로 판단
+    const numericRatio = validCount > 0 ? numericValues.length / validCount : 0;
+    const isNumeric = numericValues.length > 0 && numericRatio >= 0.8;
     
     // 데이터형 판단 (수치/범주)
     let dataType = '범주';
@@ -2419,6 +2976,19 @@ function restoreNoCodeFromMemory() {
 function switchMode(mode) {
   if (currentMode === mode) return;
   
+  // 모드 전환 전에 현재 상태를 메모리에 보존
+  // 노코드에서 코드로 전환할 때 노코드 상태가 사라지지 않도록
+  if (currentMode === 'nocode' && mode === 'code') {
+    // 노코드 상태는 이미 window 객체에 저장되어 있으므로 별도 처리 불필요
+    // 하지만 코드 모드로 전환하기 전에 현재 노코드 상태가 안전하게 보존되도록 확인
+    console.log('노코드 → 코드 모드 전환, 노코드 상태 보존:', {
+      hasData: !!window.currentData,
+      hasColumns: !!window.currentColumns,
+      hasModelConfig: !!window.modelConfig,
+      operationHistoryCount: window.operationHistory?.length || 0
+    });
+  }
+  
   currentMode = mode;
   
   // 버튼 활성화 상태 업데이트
@@ -2447,7 +3017,14 @@ function switchMode(mode) {
       setupFileUpload();
       setupPreprocessing();
       // 메모리에 저장된 데이터/전처리 결과 복원
-      restoreNoCodeFromMemory();
+      // 약간의 지연을 두어 DOM이 완전히 렌더링된 후 복원
+      setTimeout(() => {
+        restoreNoCodeFromMemory();
+        // 모델 설정이 있으면 UI 업데이트
+        if (window.modelConfig) {
+          updateModelTrainingUI();
+        }
+      }, 50);
     } else if (mode === 'code') {
       // 코드 에디터 셀 이벤트 연결
       setupCodeEditorEvents();
@@ -2472,6 +3049,7 @@ function getCurrentState() {
     },
     codeState: {
       generatedCodeCells: window.generatedCodeCells || [],
+      codeCellOutputs: Array.isArray(window.codeCellOutputs) ? window.codeCellOutputs : [],
     },
     mode: currentMode,
   };
@@ -2593,8 +3171,25 @@ async function handleSaveProject() {
         modelConfig: window.modelConfig || null,
       };
 
+      // 코드 셀의 실행 결과(output)도 함께 저장
+      const codeCellOutputs = [];
+      if (currentMode === 'code') {
+        const cells = Array.isArray(window.generatedCodeCells) ? window.generatedCodeCells : [];
+        cells.forEach((_, idx) => {
+          const outputElement = document.getElementById(`codeCellOutput_${idx}`);
+          if (outputElement) {
+            // placeholder 메시지가 아닌 실제 output만 저장
+            const placeholder = outputElement.querySelector('.code-cell-output-placeholder');
+            if (!placeholder && outputElement.innerHTML.trim()) {
+              codeCellOutputs[idx] = outputElement.innerHTML;
+            }
+          }
+        });
+      }
+
       const codeState = {
         generatedCodeCells: window.generatedCodeCells || [],
+        codeCellOutputs: codeCellOutputs,
       };
 
       transaction.update(projectRef, {
@@ -2649,10 +3244,24 @@ function buildPythonCellsFromState() {
     ? window.operationHistory
     : [];
 
+  // 중복 작업 제거 (같은 type, columns, strategy/action을 가진 작업은 하나만 유지)
+  const seen = new Set();
+  const uniqueOperations = operations.filter((op) => {
+    if (op.type === 'load_data') return false;
+    
+    // 중복 체크를 위한 키 생성
+    const key = `${op.type}_${(op.columns || []).sort().join(',')}_${op.strategy || op.action || ''}`;
+    
+    if (seen.has(key)) {
+      return false; // 중복이면 제외
+    }
+    seen.add(key);
+    return true;
+  });
+
   let stepOffset = 2;
 
-  operations
-    .filter((op) => op.type !== 'load_data')
+  uniqueOperations
     .forEach((op, idx) => {
       switch (op.type) {
         case 'missing': {
@@ -2852,6 +3461,154 @@ function buildPythonCellsFromState() {
 
       cells.push(base.join('\n'));
     });
+  }
+
+  // 모델 학습 및 평가 코드 생성
+  if (window.modelConfig && window.modelConfig.algorithm) {
+    const modelConfig = window.modelConfig;
+    const algorithm = modelConfig.algorithm;
+    const trainRatio = modelConfig.trainRatio || 0.8;
+    const hyperparameters = modelConfig.hyperparameters || {};
+    
+    if (algorithm === 'linear_regression') {
+      // 선형회귀 코드 생성
+      const dependentVar = modelConfig.dependentVariable;
+      const independentVars = modelConfig.independentVariables || [];
+      const fitIntercept = hyperparameters.fit_intercept !== false;
+      
+      if (dependentVar && independentVars.length > 0) {
+        // 모델 생성하기 셀
+        cells.push([
+          `# ${cells.length + 1}. 모델 생성하기 - 선형회귀`,
+          'from sklearn.model_selection import train_test_split',
+          'from sklearn.linear_model import LinearRegression',
+          '',
+          `# 독립 변수와 종속 변수 설정`,
+          `X = df[[${independentVars.map(v => `"${v}"`).join(', ')}]]`,
+          `y = df["${dependentVar}"]`,
+          '',
+          `# 수치형이 아닌 데이터 자동 제거 (모델 학습을 위해 수치형 데이터만 필요)`,
+          `# 모든 선택된 변수를 수치형으로 변환 시도하고, 변환 불가능한 행은 제거`,
+          `all_cols = [${independentVars.map(v => `"${v}"`).join(', ')}] + ["${dependentVar}"]`,
+          `for col in all_cols:`,
+          `    df[col] = pd.to_numeric(df[col], errors='coerce')`,
+          `df = df.dropna(subset=all_cols)`,
+          `print(f"수치형 데이터 필터링 후: {len(df)}행")`,
+          ``,
+          `# 필터링된 데이터로 다시 변수 설정`,
+          `X = df[[${independentVars.map(v => `"${v}"`).join(', ')}]]`,
+          `y = df["${dependentVar}"]`,
+          '',
+          `# 훈련 데이터와 테스트 데이터 분할 (${(trainRatio * 100).toFixed(0)}% : ${((1 - trainRatio) * 100).toFixed(0)}%)`,
+          `X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=${(1 - trainRatio).toFixed(2)}, random_state=42)`,
+          '',
+          `# 선형회귀 모델 생성 및 학습`,
+          `model = LinearRegression(fit_intercept=${fitIntercept ? 'True' : 'False'})`,
+          'model.fit(X_train, y_train)',
+          'print("✅ 모델 학습이 완료되었습니다.")',
+          '',
+          `# 예측`,
+          'y_pred = model.predict(X_test)',
+          '',
+          `# 회귀식 출력`,
+          `equation = f"y(${dependentVar}) = "`,
+          ...(fitIntercept ? [
+            `if model.intercept_ >= 0:`,
+            `    equation += f"{model.intercept_:.4f}"`,
+            `else:`,
+            `    equation += f"-{abs(model.intercept_):.4f}"`
+          ] : []),
+          ...independentVars.flatMap((v, idx) => {
+            const varNum = idx + 1;
+            return [
+              `if model.coef_[${idx}] >= 0:`,
+              `    equation += f" + {model.coef_[${idx}]:.4f}x${varNum}(${v})"`,
+              `else:`,
+              `    equation += f" {model.coef_[${idx}]:.4f}x${varNum}(${v})"`
+            ];
+          }),
+          `print(equation)`,
+        ].join('\n'));
+        
+        // 모델 평가하기 셀 (별도 셀로 생성)
+        cells.push([
+          `# ${cells.length + 1}. 모델 평가하기`,
+          'from sklearn.metrics import r2_score',
+          '',
+          `# R² (결정계수) 계산`,
+          `r2 = r2_score(y_test, y_pred)`,
+          `print(f"R² (결정계수): {r2:.4f}")`,
+        ].join('\n'));
+      }
+    } else if (algorithm === 'logistic_regression' || algorithm === 'decision_tree' || algorithm === 'knn') {
+      // 분류 알고리즘 코드 생성
+      const dependentVar = modelConfig.dependentVariable;
+      const independentVars = modelConfig.independentVariables || [];
+      
+      if (dependentVar && independentVars.length > 0) {
+        let modelCode = '';
+        let modelName = '';
+        
+        if (algorithm === 'logistic_regression') {
+          const C = hyperparameters.C || 1.0;
+          const penalty = hyperparameters.penalty || 'l2';
+          modelName = 'LogisticRegression';
+          modelCode = `from sklearn.linear_model import LogisticRegression\nmodel = LogisticRegression(C=${C}, penalty="${penalty}", random_state=42, max_iter=1000)`;
+        } else if (algorithm === 'decision_tree') {
+          const maxDepth = hyperparameters.max_depth || 10;
+          const minSamplesSplit = hyperparameters.min_samples_split || 2;
+          const minSamplesLeaf = hyperparameters.min_samples_leaf || 1;
+          modelName = 'DecisionTreeClassifier';
+          modelCode = `from sklearn.tree import DecisionTreeClassifier\nmodel = DecisionTreeClassifier(max_depth=${maxDepth}, min_samples_split=${minSamplesSplit}, min_samples_leaf=${minSamplesLeaf}, random_state=42)`;
+        } else if (algorithm === 'knn') {
+          const nNeighbors = hyperparameters.n_neighbors || 5;
+          const weights = hyperparameters.weights || 'uniform';
+          modelName = 'KNeighborsClassifier';
+          modelCode = `from sklearn.neighbors import KNeighborsClassifier\nmodel = KNeighborsClassifier(n_neighbors=${nNeighbors}, weights="${weights}")`;
+        }
+        
+        // 모델 생성하기 셀
+        cells.push([
+          `# ${cells.length + 1}. 모델 생성하기 - ${getAlgorithmName(algorithm)}`,
+          'from sklearn.model_selection import train_test_split',
+          '',
+          `# 독립 변수와 종속 변수 설정`,
+          `X = df[[${independentVars.map(v => `"${v}"`).join(', ')}]]`,
+          `y = df["${dependentVar}"]`,
+          '',
+          `# 훈련 데이터와 테스트 데이터 분할 (${(trainRatio * 100).toFixed(0)}% : ${((1 - trainRatio) * 100).toFixed(0)}%)`,
+          `X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=${(1 - trainRatio).toFixed(2)}, random_state=42)`,
+          '',
+          `# ${modelName} 모델 생성 및 학습`,
+          modelCode,
+          'model.fit(X_train, y_train)',
+          'print("✅ 모델 학습이 완료되었습니다.")',
+          '',
+          `# 예측`,
+          'y_pred = model.predict(X_test)',
+        ].join('\n'));
+        
+        // 모델 평가하기 셀 (별도 셀로 생성)
+        cells.push([
+          `# ${cells.length + 1}. 모델 평가하기`,
+          'from sklearn.metrics import accuracy_score, precision_score, recall_score, confusion_matrix',
+          '',
+          `# 혼동행렬`,
+          `cm = confusion_matrix(y_test, y_pred)`,
+          `print("혼동행렬 (Confusion Matrix):")`,
+          `print(cm)`,
+          `print()`,
+          '',
+          `# 평가 지표`,
+          `accuracy = accuracy_score(y_test, y_pred)`,
+          `precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)`,
+          `recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)`,
+          `print(f"정확도 (Accuracy): {accuracy:.4f}")`,
+          `print(f"재현율 (Recall): {recall:.4f}")`,
+          `print(f"정밀도 (Precision): {precision:.4f}")`,
+        ].join('\n'));
+      }
+    }
   }
 
   return cells;
@@ -3410,14 +4167,66 @@ function restoreProjectState(projectData) {
                   <p><strong>훈련 데이터 비율:</strong> ${(config.trainRatio * 100).toFixed(0)}%</p>
                   <p><strong>테스트 데이터 비율:</strong> ${((1 - config.trainRatio) * 100).toFixed(0)}%</p>
                 </div>
-                <div class="model-metrics">
-                  <h6>모델 설정</h6>
-                  <p>저장된 모델 설정이 복원되었습니다.</p>
-                </div>
-              </div>
             `;
+            
+            // 선형회귀인 경우 회귀식 표시
+            if (config.algorithm === 'linear_regression' && config.evaluationResults && config.evaluationResults.equation) {
+              resultHTML += `
+                <div class="model-metrics">
+                  <h6>회귀식</h6>
+                  <div class="regression-equation">${escapeHtml(config.evaluationResults.equation)}</div>
+                </div>
+              `;
+            }
+            
+            resultHTML += `</div>`;
             resultsDiv.innerHTML = resultHTML;
             resultsDiv.style.display = 'block';
+            
+            // 모델 평가 결과 복원
+            if (config.evaluationResults) {
+              const modelEvaluationSection = document.getElementById('modelEvaluationSection');
+              const modelEvaluationResults = document.getElementById('modelEvaluationResults');
+              if (modelEvaluationSection && modelEvaluationResults) {
+                modelEvaluationSection.style.display = 'block';
+                
+                if (config.evaluationResults.type === 'regression') {
+                  // 선형회귀 평가 결과
+                  modelEvaluationResults.innerHTML = `
+                    <div class="model-evaluation-content">
+                      <p><strong>R² (결정계수):</strong> ${config.evaluationResults.rSquared.toFixed(4)}</p>
+                    </div>
+                  `;
+                } else if (config.evaluationResults.type === 'classification') {
+                  // 분류 알고리즘 평가 결과
+                  const evalResults = config.evaluationResults;
+                  
+                  // 평탄화된 confusionMatrix를 2차원 배열로 복원
+                  let restoredMatrix = [];
+                  if (evalResults.confusionMatrix && evalResults.confusionMatrixSize) {
+                    const size = evalResults.confusionMatrixSize;
+                    const flattened = evalResults.confusionMatrix;
+                    for (let i = 0; i < size; i++) {
+                      restoredMatrix[i] = [];
+                      for (let j = 0; j < size; j++) {
+                        restoredMatrix[i][j] = flattened[i * size + j] || 0;
+                      }
+                    }
+                  }
+                  
+                  modelEvaluationResults.innerHTML = `
+                    <div class="model-evaluation-content">
+                      ${renderConfusionMatrix(restoredMatrix, evalResults.labelMap || {})}
+                      <div class="classification-metrics">
+                        <p><strong>정확도 (Accuracy):</strong> ${evalResults.accuracy.toFixed(4)}</p>
+                        <p><strong>재현율 (Recall):</strong> ${evalResults.recall.toFixed(4)}</p>
+                        <p><strong>정밀도 (Precision):</strong> ${evalResults.precision.toFixed(4)}</p>
+                      </div>
+                    </div>
+                  `;
+                }
+              }
+            }
           }
         }, 300);
       }
@@ -3427,11 +4236,15 @@ function restoreProjectState(projectData) {
   const codeState = projectData.codeState;
   if (codeState && Array.isArray(codeState.generatedCodeCells)) {
     window.generatedCodeCells = codeState.generatedCodeCells;
+    // 저장된 코드 셀 실행 결과도 복원
+    window.codeCellOutputs = Array.isArray(codeState.codeCellOutputs) ? codeState.codeCellOutputs : [];
 
     if (currentMode === 'code') {
       const editorContent = document.getElementById('editorContent');
       if (editorContent) {
         editorContent.innerHTML = renderCodeEditor();
+        // 이벤트 리스너 재설정
+        setupCodeEditorEvents();
       }
     }
   }
