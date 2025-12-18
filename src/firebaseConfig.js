@@ -32,18 +32,60 @@ const missingVars = requiredEnvVars.filter(
 
 if (missingVars.length > 0) {
   const errorMessage = `Firebase 환경 변수가 설정되지 않았습니다: ${missingVars.join(', ')}\n\nNetlify 대시보드에서 환경 변수를 설정해주세요.`;
-  console.error(errorMessage);
-  // 개발 환경에서는 오류를 던지고, 프로덕션에서는 경고만 표시
+  console.error('❌ Firebase 설정 오류:', errorMessage);
+  console.error('누락된 환경 변수:', missingVars);
+  console.error('현재 firebaseConfig:', firebaseConfig);
+  
+  // 프로덕션에서도 화면에 오류 표시
+  if (typeof window !== 'undefined') {
+    const app = document.querySelector('#app');
+    if (app) {
+      app.innerHTML = `
+        <div style="padding: 40px; text-align: center; color: #fff;">
+          <h2 style="color: #ff6b6b; margin-bottom: 20px;">⚠️ Firebase 설정 오류</h2>
+          <p style="margin-bottom: 10px;">다음 환경 변수가 설정되지 않았습니다:</p>
+          <ul style="list-style: none; padding: 0; margin: 20px 0;">
+            ${missingVars.map(v => `<li style="margin: 5px 0;">• ${v}</li>`).join('')}
+          </ul>
+          <p style="margin-top: 20px; font-size: 14px; color: #ccc;">
+            Netlify 대시보드 → Site settings → Environment variables에서 설정해주세요.
+          </p>
+        </div>
+      `;
+    }
+  }
+  
+  // 개발 환경에서는 오류를 던짐
   if (import.meta.env.DEV) {
     throw new Error(errorMessage);
   }
 }
 
 // Firebase 초기화
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const storage = getStorage(app);
+let app, auth, db, storage;
+try {
+  console.log('Firebase 초기화 시작...');
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+  storage = getStorage(app);
+  console.log('✅ Firebase 초기화 완료');
+} catch (error) {
+  console.error('❌ Firebase 초기화 실패:', error);
+  if (typeof window !== 'undefined') {
+    const appElement = document.querySelector('#app');
+    if (appElement) {
+      appElement.innerHTML = `
+        <div style="padding: 40px; text-align: center; color: #fff;">
+          <h2 style="color: #ff6b6b; margin-bottom: 20px;">⚠️ Firebase 초기화 실패</h2>
+          <p style="margin-bottom: 10px;">${error.message}</p>
+          <button onclick="location.reload()" style="margin-top: 20px; padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer;">새로고침</button>
+        </div>
+      `;
+    }
+  }
+  throw error;
+}
 const googleProvider = new GoogleAuthProvider();
 
 // Google 로그인 설정 - 쿠키 문제 해결

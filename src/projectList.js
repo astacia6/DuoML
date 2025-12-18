@@ -573,9 +573,15 @@ function getProjectStatus(project) {
 
 // 프로젝트 목록 불러오기
 async function loadProjects() {
-  if (!currentUser) return;
+  console.log('loadProjects 호출, currentUser:', currentUser);
+  
+  if (!currentUser) {
+    console.warn('currentUser가 없어서 프로젝트 목록을 불러올 수 없습니다.');
+    return;
+  }
 
   try {
+    console.log('프로젝트 목록 불러오기 시작');
     const loadingScreen = document.getElementById('loadingScreen');
     if (loadingScreen) {
       loadingScreen.style.display = 'flex';
@@ -669,13 +675,62 @@ function escapeHtml(text) {
 }
 
 // 인증 상태 확인 및 프로젝트 목록 로드
-onAuthStateChanged(auth, (user) => {
-  if (!user) {
-    // 로그인되지 않은 사용자는 로그인 페이지로 리다이렉트
-    window.location.href = 'index.html';
-  } else {
-    // 로그인된 사용자는 프로젝트 목록 로드
-    currentUser = user;
-    loadProjects();
+console.log('projectList.js: 인증 상태 확인 시작');
+console.log('auth 객체:', auth);
+
+try {
+  const unsubscribe = onAuthStateChanged(auth, (user) => {
+    try {
+      console.log('인증 상태 변경:', user ? `로그인됨 (${user.email})` : '로그인 안 됨');
+      
+      if (!user) {
+        // 로그인되지 않은 사용자는 로그인 페이지로 리다이렉트
+        console.log('로그인되지 않음, index.html로 리다이렉트');
+        window.location.href = 'index.html';
+      } else {
+        // 로그인된 사용자는 프로젝트 목록 로드
+        console.log('사용자 로그인 확인, 프로젝트 목록 로드 시작');
+        currentUser = user;
+        loadProjects();
+      }
+    } catch (error) {
+      console.error('인증 상태 변경 처리 중 오류:', error);
+      const app = document.querySelector('#app');
+      const loadingScreen = document.getElementById('loadingScreen');
+      if (loadingScreen) {
+        loadingScreen.style.display = 'none';
+      }
+      if (app) {
+        app.innerHTML = `
+          <div class="error-container">
+            <h2>인증 오류가 발생했습니다</h2>
+            <p>${error.message}</p>
+            <p style="font-size: 12px; color: #666; margin-top: 10px;">
+              Firebase 환경 변수가 제대로 설정되었는지 확인해주세요.
+            </p>
+            <button onclick="location.reload()">새로고침</button>
+            <button onclick="window.location.href='index.html'" style="margin-left: 10px;">로그인 페이지로</button>
+          </div>
+        `;
+      }
+    }
+  });
+  
+  console.log('onAuthStateChanged 구독 완료');
+} catch (error) {
+  console.error('onAuthStateChanged 설정 오류:', error);
+  const app = document.querySelector('#app');
+  const loadingScreen = document.getElementById('loadingScreen');
+  if (loadingScreen) {
+    loadingScreen.style.display = 'none';
   }
-});
+  if (app) {
+    app.innerHTML = `
+      <div class="error-container">
+        <h2>초기화 오류가 발생했습니다</h2>
+        <p>${error.message}</p>
+        <button onclick="location.reload()">새로고침</button>
+      </div>
+    `;
+  }
+}
