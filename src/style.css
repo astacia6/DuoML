@@ -2609,6 +2609,20 @@ body {
   color: #666;
 }
 
+.regression-chart-note {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: #f0f4ff;
+  border-left: 3px solid #667eea;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  color: #4338ca;
+}
+
+.regression-chart-note strong {
+  font-weight: 600;
+}
+
 .no-numeric-warning {
   padding: 1rem;
   background: #fff3cd;

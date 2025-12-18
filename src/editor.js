@@ -1801,102 +1801,128 @@ function drawRegressionChart(X, y, coefficients, independentVariables, dependent
 
   const dim = independentVariables.length;
 
-  if (dim === 1) {
-    // 1차원: 2D 산점도 + 회귀선
-    draw2DRegressionChart(X, y, coefficients, independentVariables[0], dependentVariable, fitIntercept, container);
-  } else if (dim === 2) {
-    // 2차원: 3D 산점도 + 회귀 평면
-    draw3DRegressionChart(X, y, coefficients, independentVariables, dependentVariable, fitIntercept, container);
-  } else if (dim === 3) {
-    // 3차원: 3D 산점도 (3개 변수 중 2개 선택)
-    draw3DRegressionChart(X, y, coefficients, independentVariables.slice(0, 2), dependentVariable, fitIntercept, container);
+  // 1차원, 2차원, 3차원 모두 첫 번째 독립변수와 종속변수로 2D 그래프 그리기
+  if (dim >= 1 && dim <= 3) {
+    draw2DRegressionChartWithChartJS(X, y, coefficients, independentVariables, dependentVariable, fitIntercept, container);
   }
 }
 
-// 2D 회귀 그래프 (1차원)
-function draw2DRegressionChart(X, y, coefficients, xVar, yVar, fitIntercept, container) {
-  container.innerHTML = '<canvas id="regressionChart2D" width="600" height="400"></canvas>';
+// Chart.js를 사용한 2D 회귀 그래프
+function draw2DRegressionChartWithChartJS(X, y, coefficients, independentVariables, dependentVariable, fitIntercept, container) {
+  // 첫 번째 독립변수 사용
+  const xVar = independentVariables[0];
+  const xValues = X.map(row => row[0]);
+  
+  // 데이터 포인트 준비
+  const scatterData = xValues.map((x, i) => ({
+    x: x,
+    y: y[i]
+  }));
+
+  // 회귀선 데이터 준비
+  const xMin = Math.min(...xValues);
+  const xMax = Math.max(...xValues);
+  const xStep = (xMax - xMin) / 100;
+  const regressionLineData = [];
+  
+  for (let x = xMin; x <= xMax; x += xStep) {
+    // 첫 번째 독립변수만 사용하여 예측 (다른 변수는 평균값 사용)
+    let predictionX = [x];
+    if (independentVariables.length > 1) {
+      // 다른 독립변수들의 평균값 사용
+      for (let i = 1; i < independentVariables.length; i++) {
+        const avgValue = X.reduce((sum, row) => sum + row[i], 0) / X.length;
+        predictionX.push(avgValue);
+      }
+    }
+    const predictedY = predictY(coefficients, predictionX, fitIntercept);
+    regressionLineData.push({ x: x, y: predictedY });
+  }
+
+  container.innerHTML = `
+    <div style="position: relative; height: 400px;">
+      <canvas id="regressionChart2D"></canvas>
+    </div>
+    ${independentVariables.length > 1 ? `
+      <p class="regression-chart-note">
+        <strong>참고:</strong> 그래프는 첫 번째 독립변수(${escapeHtml(xVar)})와 종속변수의 관계를 보여줍니다. 
+        다른 독립변수들은 평균값으로 고정되어 있습니다.
+      </p>
+    ` : ''}
+  `;
+
   const canvas = document.getElementById('regressionChart2D');
   if (!canvas) return;
 
-  const ctx = canvas.getContext('2d');
-  const width = canvas.width;
-  const height = canvas.height;
-  const padding = 50;
-
-  // 데이터 포인트
-  const xValues = X.map(row => row[0]);
-  const xMin = Math.min(...xValues);
-  const xMax = Math.max(...xValues);
-  const yMin = Math.min(...y);
-  const yMax = Math.max(...y);
-  const xRange = xMax - xMin || 1;
-  const yRange = yMax - yMin || 1;
-
-  // 배경
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, width, height);
-
-  // 그리드
-  ctx.strokeStyle = '#e5e5e7';
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= 10; i++) {
-    const x = padding + (i / 10) * (width - 2 * padding);
-    ctx.beginPath();
-    ctx.moveTo(x, padding);
-    ctx.lineTo(x, height - padding);
-    ctx.stroke();
-
-    const y = padding + (i / 10) * (height - 2 * padding);
-    ctx.beginPath();
-    ctx.moveTo(padding, y);
-    ctx.lineTo(width - padding, y);
-    ctx.stroke();
-  }
-
-  // 회귀선 그리기
-  ctx.strokeStyle = '#667eea';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  const x1 = padding;
-  const x2 = width - padding;
-  const y1 = height - padding - ((predictY(coefficients, [xMin], fitIntercept) - yMin) / yRange) * (height - 2 * padding);
-  const y2 = height - padding - ((predictY(coefficients, [xMax], fitIntercept) - yMin) / yRange) * (height - 2 * padding);
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
-
-  // 데이터 포인트
-  ctx.fillStyle = '#667eea';
-  for (let i = 0; i < X.length; i++) {
-    const x = padding + ((xValues[i] - xMin) / xRange) * (width - 2 * padding);
-    const yPos = height - padding - ((y[i] - yMin) / yRange) * (height - 2 * padding);
-    ctx.beginPath();
-    ctx.arc(x, yPos, 4, 0, 2 * Math.PI);
-    ctx.fill();
-  }
-
-  // 축 레이블
-  ctx.fillStyle = '#1d1d1f';
-  ctx.font = '12px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText(xVar, width / 2, height - 10);
-  ctx.save();
-  ctx.translate(15, height / 2);
-  ctx.rotate(-Math.PI / 2);
-  ctx.fillText(yVar, 0, 0);
-  ctx.restore();
-}
-
-// 3D 회귀 그래프 (2차원, 3차원)
-function draw3DRegressionChart(X, y, coefficients, independentVariables, dependentVariable, fitIntercept, container) {
-  container.innerHTML = `
-    <div class="regression-3d-note">
-      <p>3D 그래프는 코드 모드에서 Python의 matplotlib을 통해 표시됩니다.</p>
-      <p>독립 변수: ${independentVariables.map(v => escapeHtml(v)).join(', ')}</p>
-      <p>종속 변수: ${escapeHtml(dependentVariable)}</p>
-    </div>
-  `;
+  // Chart.js import 및 생성
+  import('chart.js/auto').then(({ Chart }) => {
+    new Chart(canvas, {
+      type: 'scatter',
+      data: {
+        datasets: [
+          {
+            label: '데이터 포인트',
+            data: scatterData,
+            backgroundColor: 'rgba(102, 126, 234, 0.6)',
+            borderColor: 'rgba(102, 126, 234, 1)',
+            pointRadius: 5,
+            pointHoverRadius: 7,
+            showLine: false
+          },
+          {
+            label: '회귀선',
+            data: regressionLineData,
+            backgroundColor: 'rgba(102, 126, 234, 0)',
+            borderColor: 'rgba(102, 126, 234, 1)',
+            borderWidth: 2,
+            pointRadius: 0,
+            showLine: true,
+            tension: 0
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top'
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                if (context.datasetIndex === 0) {
+                  return `(${context.parsed.x.toFixed(2)}, ${context.parsed.y.toFixed(2)})`;
+                } else {
+                  return `회귀선: y = ${context.parsed.y.toFixed(2)}`;
+                }
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            title: {
+              display: true,
+              text: xVar
+            },
+            type: 'linear',
+            position: 'bottom'
+          },
+          y: {
+            title: {
+              display: true,
+              text: dependentVariable
+            }
+          }
+        }
+      }
+    });
+  }).catch(err => {
+    console.error('Chart.js 로드 실패:', err);
+    container.innerHTML = '<p>그래프를 표시하는 중 오류가 발생했습니다.</p>';
+  });
 }
 
 // 예측값 계산
