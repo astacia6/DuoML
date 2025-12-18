@@ -1,10 +1,17 @@
 // 프로젝트 목록 페이지 기능 관리
+console.log('🚀 projectList.js 로드 시작');
+
 import './style.css';
 import { auth, db } from './firebaseConfig.js';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, query, where, getDocs, addDoc, orderBy, serverTimestamp, deleteDoc, updateDoc, doc } from 'firebase/firestore';
 
+console.log('✅ 모든 모듈 로드 완료');
+console.log('✅ auth 객체:', auth);
+console.log('✅ db 객체:', db);
+
 let currentUser = null;
+console.log('✅ projectList.js 초기화 완료');
 
 // 프로젝트 목록 페이지 HTML 렌더링
 function renderProjectList(projects) {
