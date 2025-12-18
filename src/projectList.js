@@ -1,17 +1,10 @@
 // 프로젝트 목록 페이지 기능 관리
-console.log('🚀 projectList.js 로드 시작');
-
 import './style.css';
 import { auth, db } from './firebaseConfig.js';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, query, where, getDocs, addDoc, orderBy, serverTimestamp, deleteDoc, updateDoc, doc } from 'firebase/firestore';
 
-console.log('✅ 모든 모듈 로드 완료');
-console.log('✅ auth 객체:', auth);
-console.log('✅ db 객체:', db);
-
 let currentUser = null;
-console.log('✅ projectList.js 초기화 완료');
 
 // 프로젝트 목록 페이지 HTML 렌더링
 function renderProjectList(projects) {
@@ -580,15 +573,11 @@ function getProjectStatus(project) {
 
 // 프로젝트 목록 불러오기
 async function loadProjects() {
-  console.log('loadProjects 호출, currentUser:', currentUser);
-  
   if (!currentUser) {
-    console.warn('currentUser가 없어서 프로젝트 목록을 불러올 수 없습니다.');
     return;
   }
 
   try {
-    console.log('프로젝트 목록 불러오기 시작');
     const loadingScreen = document.getElementById('loadingScreen');
     if (loadingScreen) {
       loadingScreen.style.display = 'flex';
@@ -682,21 +671,14 @@ function escapeHtml(text) {
 }
 
 // 인증 상태 확인 및 프로젝트 목록 로드
-console.log('projectList.js: 인증 상태 확인 시작');
-console.log('auth 객체:', auth);
-
 try {
   const unsubscribe = onAuthStateChanged(auth, (user) => {
     try {
-      console.log('인증 상태 변경:', user ? `로그인됨 (${user.email})` : '로그인 안 됨');
-      
       if (!user) {
         // 로그인되지 않은 사용자는 로그인 페이지로 리다이렉트
-        console.log('로그인되지 않음, index.html로 리다이렉트');
         window.location.href = 'index.html';
       } else {
         // 로그인된 사용자는 프로젝트 목록 로드
-        console.log('사용자 로그인 확인, 프로젝트 목록 로드 시작');
         currentUser = user;
         loadProjects();
       }
@@ -722,8 +704,6 @@ try {
       }
     }
   });
-  
-  console.log('onAuthStateChanged 구독 완료');
 } catch (error) {
   console.error('onAuthStateChanged 설정 오류:', error);
   const app = document.querySelector('#app');
