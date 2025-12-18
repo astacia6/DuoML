@@ -3913,7 +3913,12 @@ async function handleChatbotSend() {
       content: message,
     });
     
-    const response = await fetch('http://localhost:3000/api/chat', {
+    // API URL: 로컬 개발 시 localhost, 배포 시 Netlify Functions 사용
+    const apiUrl = import.meta.env.DEV 
+      ? 'http://localhost:3000/api/chat'
+      : '/.netlify/functions/chat';
+    
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
