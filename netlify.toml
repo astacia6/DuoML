@@ -2,6 +2,8 @@
   command = "npm run build"
   publish = "dist"
 
+# SPA 라우팅을 위한 리다이렉트
+# 실제 파일이 존재하지 않는 경우에만 index.html로 리다이렉트
 [[redirects]]
   from = "/*"
   to = "/index.html"
