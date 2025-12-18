@@ -9,6 +9,7 @@ let currentUser = null;
 let currentProjectId = null;
 let currentMode = 'nocode'; // 'nocode' or 'code'
 let chatbotOpen = true; // 챗봇 패널 열림 상태
+let savedChatHistory = null; // 저장된 챗봇 대화 내용
 let currentCredits = null; // 남은 크레딧 (null이면 아직 불러오지 않음)
 let pyodideInstance = null; // 브라우저 파이썬 실행용
 let lastSavedState = null; // 마지막 저장된 상태 (변경사항 추적용)
@@ -303,8 +304,51 @@ function renderEditorPage(projectData) {
 
   // 이벤트 리스너 설정
   setupEventListeners();
-  // 프로젝트 저장된 상태 복원
-  restoreProjectState(projectData);
+  
+  // DOM이 완전히 렌더링된 후 프로젝트 상태 복원
+  // requestAnimationFrame을 사용하여 다음 프레임에서 실행
+  requestAnimationFrame(() => {
+    // 프로젝트 저장된 상태 복원
+    restoreProjectState(projectData);
+    
+    // MutationObserver를 사용하여 chatbotMessages 요소가 DOM에 추가되면 자동 복원
+    const observer = new MutationObserver((mutations, obs) => {
+      const chatbotMessages = document.getElementById('chatbotMessages');
+      if (chatbotMessages && savedChatHistory && savedChatHistory.length > 0) {
+        // 요소가 발견되면 복원 시도
+        restoreChatHistory(true);
+        // 한 번만 실행되도록 observer 해제
+        obs.disconnect();
+      }
+    });
+    
+    // body를 관찰하여 chatbotMessages가 추가되면 감지
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+    
+    // 추가로 챗봇 대화 내용 복원을 여러 시점에서 시도
+    setTimeout(() => {
+      if (savedChatHistory && savedChatHistory.length > 0) {
+        restoreChatHistory(true);
+      }
+    }, 300);
+    
+    setTimeout(() => {
+      if (savedChatHistory && savedChatHistory.length > 0) {
+        restoreChatHistory(true);
+      }
+    }, 800);
+    
+    setTimeout(() => {
+      if (savedChatHistory && savedChatHistory.length > 0) {
+        restoreChatHistory(true);
+      }
+      // 2초 후 observer 해제
+      observer.disconnect();
+    }, 2000);
+  });
 }
 
 // 노코드 에디터 렌더링
@@ -3576,6 +3620,19 @@ function buildPythonCellsFromState() {
           `X = df[[${independentVars.map(v => `"${v}"`).join(', ')}]]`,
           `y = df["${dependentVar}"]`,
           '',
+          `# 독립 변수만 수치형으로 변환 (종속 변수는 범주형으로 유지)`,
+          `# 독립 변수를 수치형으로 변환 시도하고, 변환 불가능한 행은 제거`,
+          `for col in [${independentVars.map(v => `"${v}"`).join(', ')}]:`,
+          `    df[col] = pd.to_numeric(df[col], errors='coerce')`,
+          `# 독립 변수와 종속 변수 모두에 NaN이 없는 행만 유지`,
+          `all_cols = [${independentVars.map(v => `"${v}"`).join(', ')}] + ["${dependentVar}"]`,
+          `df = df.dropna(subset=all_cols)`,
+          `print(f"데이터 필터링 후: {len(df)}행")`,
+          ``,
+          `# 필터링된 데이터로 다시 변수 설정`,
+          `X = df[[${independentVars.map(v => `"${v}"`).join(', ')}]]`,
+          `y = df["${dependentVar}"]`,
+          '',
           `# 훈련 데이터와 테스트 데이터 분할 (${(trainRatio * 100).toFixed(0)}% : ${((1 - trainRatio) * 100).toFixed(0)}%)`,
           `X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=${(1 - trainRatio).toFixed(2)}, random_state=42)`,
           '',
@@ -3638,6 +3695,73 @@ function handleGenerateCode() {
   updateSaveButtonColor();
 }
 
+// 챗봇 대화 내용 복원 함수
+let restoreChatHistoryAttempts = 0;
+const MAX_RESTORE_ATTEMPTS = 50; // 최대 5초간 시도
+let isRestoringChat = false; // 복원 중 플래그 (중복 실행 방지)
+
+function restoreChatHistory(force = false) {
+  if (!savedChatHistory || !Array.isArray(savedChatHistory) || savedChatHistory.length === 0) {
+    restoreChatHistoryAttempts = 0;
+    isRestoringChat = false;
+    return;
+  }
+  
+  const chatbotMessages = document.getElementById('chatbotMessages');
+  if (!chatbotMessages) {
+    // DOM이 아직 준비되지 않았으면 나중에 다시 시도
+    if (restoreChatHistoryAttempts < MAX_RESTORE_ATTEMPTS) {
+      restoreChatHistoryAttempts++;
+      setTimeout(() => restoreChatHistory(force), 100);
+    } else {
+      console.warn('챗봇 대화 내용 복원 실패: chatbotMessages 요소를 찾을 수 없습니다.');
+      restoreChatHistoryAttempts = 0;
+      isRestoringChat = false;
+    }
+    return;
+  }
+  
+  // 이미 복원 중이면 중복 실행 방지
+  if (isRestoringChat && !force) {
+    return;
+  }
+  
+  // force가 false이고 이미 메시지가 있으면 복원하지 않음 (중복 방지)
+  // 단, force가 true이면 기존 메시지를 지우고 다시 복원
+  if (!force && chatbotMessages.children.length > 0) {
+    console.log('챗봇 대화 내용이 이미 있음. 복원 건너뜀.');
+    restoreChatHistoryAttempts = 0;
+    isRestoringChat = false;
+    return;
+  }
+  
+  // 복원 시작
+  isRestoringChat = true;
+  
+  // force가 true이면 기존 메시지 초기화
+  if (force) {
+    chatbotMessages.innerHTML = '';
+  }
+  
+  console.log('챗봇 대화 내용 복원 시작:', savedChatHistory.length, '개 메시지');
+  
+  // 저장된 대화 내용을 시간순으로 복원
+  savedChatHistory.forEach((msg) => {
+    if (msg.type && msg.text) {
+      addChatbotMessage(msg.type, msg.text, null, true); // skipSave=true로 저장하지 않음
+    }
+  });
+  
+  console.log('챗봇 대화 내용 복원 완료');
+  restoreChatHistoryAttempts = 0;
+  isRestoringChat = false;
+  
+  // 스크롤을 맨 아래로
+  setTimeout(() => {
+    chatbotMessages.scrollTop = chatbotMessages.scrollHeight;
+  }, 100);
+}
+
 // 챗봇 토글
 function toggleChatbot() {
   chatbotOpen = !chatbotOpen;
@@ -3688,6 +3812,14 @@ function toggleChatbot() {
   if (chatbotContent) {
     if (chatbotOpen) {
       chatbotContent.style.display = 'flex';
+      // 챗봇 패널이 열릴 때 저장된 대화 내용이 있으면 복원
+      // 여러 번 시도하여 확실히 복원되도록 함
+      setTimeout(() => {
+        restoreChatHistory(true); // force=true로 기존 메시지 초기화 후 복원
+      }, 100);
+      setTimeout(() => {
+        restoreChatHistory(true);
+      }, 300);
     } else {
       chatbotContent.style.display = 'none';
     }
@@ -3957,23 +4089,57 @@ async function saveChatMessage(type, text) {
     console.warn('챗봇 메시지 저장 실패: currentUser 또는 currentProjectId가 없습니다.', {
       hasUser: !!currentUser,
       hasProjectId: !!currentProjectId,
+      currentUserId: currentUser?.uid,
+      currentProjectId: currentProjectId,
     });
+    return;
+  }
+  
+  if (!text || typeof text !== 'string' || text.trim().length === 0) {
+    console.warn('챗봇 메시지 저장 실패: 텍스트가 비어있습니다.');
     return;
   }
   
   try {
     const projectRef = doc(db, 'projects', currentProjectId);
+
+    // Firestore에서는 serverTimestamp()를 배열(arrayUnion) 안에 넣을 수 없으므로
+    // 메시지 타임스탬프는 클라이언트 시간으로 저장하고,
+    // 문서의 updatedAt 필드만 serverTimestamp()를 사용합니다.
+    const messageData = {
+      type,
+      text: text.trim(),
+      // 밀리초 단위 유닉스 타임스탬프
+      timestamp: Date.now(),
+    };
+    
+    console.log('챗봇 메시지 저장 시도:', {
+      projectId: currentProjectId,
+      type,
+      textLength: text.length,
+      textPreview: text.substring(0, 50) + '...',
+    });
+    
     await updateDoc(projectRef, {
-      chatHistory: arrayUnion({
-        type,
-        text,
-        timestamp: serverTimestamp(),
-      }),
+      chatHistory: arrayUnion(messageData),
       updatedAt: serverTimestamp(),
     });
-    console.log('챗봇 메시지 저장 성공:', { type, textLength: text.length });
+    
+    console.log('✅ 챗봇 메시지 저장 성공:', { type, textLength: text.length });
+    
+    // 저장 후 프로젝트 데이터 다시 불러와서 확인 (디버깅용)
+    const projectData = await getDoc(projectRef);
+    if (projectData.exists()) {
+      const chatHistory = projectData.data().chatHistory || [];
+      console.log('저장 후 chatHistory 길이:', chatHistory.length);
+    }
   } catch (error) {
-    console.error('챗봇 메시지 저장 오류:', error);
+    console.error('❌ 챗봇 메시지 저장 오류:', error);
+    console.error('에러 상세:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack,
+    });
     // 저장 실패해도 UI에는 표시되도록 계속 진행
   }
 }
@@ -4027,7 +4193,10 @@ function setupCodeCopyButtons(messageElement) {
 // 챗봇 메시지 추가
 function addChatbotMessage(type, text, id, skipSave = false) {
   const chatbotMessages = document.getElementById('chatbotMessages');
-  if (!chatbotMessages) return;
+  if (!chatbotMessages) {
+    console.warn('chatbotMessages 요소를 찾을 수 없습니다.');
+    return;
+  }
   
   const messageDiv = document.createElement('div');
   messageDiv.className = `chatbot-message ${type}`;
@@ -4043,18 +4212,28 @@ function addChatbotMessage(type, text, id, skipSave = false) {
   setupCodeCopyButtons(messageDiv);
   
   // Firestore에 저장 (로딩 메시지와 skipSave가 true인 경우 제외)
-  if (!skipSave && !id?.startsWith('loading-')) {
-    saveChatMessage(type, text);
+  const shouldSave = !skipSave && !id?.startsWith('loading-');
+  if (shouldSave) {
+    console.log('챗봇 메시지 저장 호출:', { type, textLength: text.length, id, skipSave });
+    saveChatMessage(type, text).catch(err => {
+      console.error('addChatbotMessage에서 saveChatMessage 호출 실패:', err);
+    });
+  } else {
+    console.log('챗봇 메시지 저장 건너뜀:', { type, id, skipSave, reason: skipSave ? 'skipSave=true' : 'loading message' });
   }
 }
 
 // 특정 메시지 교체 (로딩 → 실제 응답)
 function replaceChatbotMessage(id, newText) {
   const chatbotMessages = document.getElementById('chatbotMessages');
-  if (!chatbotMessages) return;
+  if (!chatbotMessages) {
+    console.warn('replaceChatbotMessage: chatbotMessages 요소를 찾을 수 없습니다.');
+    return;
+  }
 
   const target = chatbotMessages.querySelector(`.chatbot-message[data-id="${id}"]`);
   if (!target) {
+    console.log('replaceChatbotMessage: 대상 메시지를 찾을 수 없어 새로 추가합니다.');
     addChatbotMessage('bot', newText);
     return;
   }
@@ -4063,6 +4242,8 @@ function replaceChatbotMessage(id, newText) {
   
   // 코드 복사 버튼 이벤트 설정
   setupCodeCopyButtons(target);
+  
+  console.log('replaceChatbotMessage: 메시지 교체 완료', { id, textLength: newText.length });
 }
 
 // 프로젝트 데이터 불러오기
@@ -4257,42 +4438,30 @@ function restoreProjectState(projectData) {
   // 챗봇 대화 내용 복원
   const chatHistory = projectData.chatHistory;
   if (Array.isArray(chatHistory) && chatHistory.length > 0) {
-    console.log('챗봇 대화 내용 복원 시작:', chatHistory.length, '개 메시지');
+    // 전역 변수에 저장 (나중에 챗봇 패널이 열릴 때 복원하기 위해)
+    savedChatHistory = chatHistory;
+    console.log('챗봇 대화 내용 저장:', chatHistory.length, '개 메시지');
     
-    // DOM이 완전히 렌더링될 때까지 여러 번 시도
-    let attempts = 0;
-    const maxAttempts = 10;
-    
-    const tryRestoreChat = () => {
+    // 챗봇 패널이 열려있으면 즉시 복원 시도
+    // 여러 시점에서 복원을 시도하여 확실히 복원되도록 함
+    const tryRestore = () => {
       const chatbotMessages = document.getElementById('chatbotMessages');
       if (chatbotMessages) {
-        // 기존 메시지 초기화
-        chatbotMessages.innerHTML = '';
-        
-        // 저장된 대화 내용을 시간순으로 복원
-        chatHistory.forEach((msg) => {
-          if (msg.type && msg.text) {
-            addChatbotMessage(msg.type, msg.text, null, true); // skipSave=true로 저장하지 않음
-          }
-        });
-        
-        console.log('챗봇 대화 내용 복원 완료');
-        
-        // 스크롤을 맨 아래로
-        setTimeout(() => {
-          chatbotMessages.scrollTop = chatbotMessages.scrollHeight;
-        }, 100);
-      } else if (attempts < maxAttempts) {
-        attempts++;
-        setTimeout(tryRestoreChat, 100);
-      } else {
-        console.warn('chatbotMessages 요소를 찾을 수 없습니다. (최대 시도 횟수 초과)');
+        restoreChatHistory(true);
       }
     };
     
-    // 첫 시도
-    setTimeout(tryRestoreChat, 100);
+    // 즉시 시도
+    tryRestore();
+    
+    // 여러 시점에서 재시도
+    setTimeout(tryRestore, 100);
+    setTimeout(tryRestore, 300);
+    setTimeout(tryRestore, 600);
+    setTimeout(tryRestore, 1000);
+    setTimeout(tryRestore, 2000);
   } else {
+    savedChatHistory = null;
     console.log('복원할 챗봇 대화 내용이 없습니다.');
   }
   
