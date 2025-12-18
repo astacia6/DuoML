@@ -16,6 +16,29 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
+// 환경 변수 검증
+const requiredEnvVars = [
+  'VITE_FIREBASE_API_KEY',
+  'VITE_FIREBASE_AUTH_DOMAIN',
+  'VITE_FIREBASE_PROJECT_ID',
+  'VITE_FIREBASE_STORAGE_BUCKET',
+  'VITE_FIREBASE_MESSAGING_SENDER_ID',
+  'VITE_FIREBASE_APP_ID'
+];
+
+const missingVars = requiredEnvVars.filter(
+  varName => !import.meta.env[varName]
+);
+
+if (missingVars.length > 0) {
+  const errorMessage = `Firebase 환경 변수가 설정되지 않았습니다: ${missingVars.join(', ')}\n\nNetlify 대시보드에서 환경 변수를 설정해주세요.`;
+  console.error(errorMessage);
+  // 개발 환경에서는 오류를 던지고, 프로덕션에서는 경고만 표시
+  if (import.meta.env.DEV) {
+    throw new Error(errorMessage);
+  }
+}
+
 // Firebase 초기화
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
